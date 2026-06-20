@@ -1,0 +1,25 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: xsfc-resource-operator
+  namespace: xsfc-system
+  labels:
+    release: prometheus
+spec:
+  groups:
+    - name: xsfc-resource-operator.rules
+      rules:
+        - alert: XSFCResourceOperatorDown
+          expr: up{job=~".*xsfc-resource-operator.*"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: XSFC Resource Operator is down
+        - alert: XSFCResourceOperatorNoReconcile
+          expr: increase(xsfc_operator_reconcile_total[15m]) == 0
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: XSFC Resource Operator has not reconciled anything

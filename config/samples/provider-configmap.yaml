@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telemetry-default
+  namespace: observability
+  labels:
+    xfsc.io/resource-provider: "true"
+    xfsc.io/resource-type: telemetry
+    xfsc.io/resource-name: default
+data:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability.svc:4317

@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xsfc-resource-operator
+  namespace: xsfc-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: xsfc-resource-operator
+  template:
+    metadata:
+      labels:
+        app: xsfc-resource-operator
+    spec:
+      serviceAccountName: xsfc-resource-operator
+      containers:
+        - name: manager
+          image: ghcr.io/xfsc/xsfc-resource-operator:latest
+          args:
+            - --api-bind-address=:8088
+            - --metrics-bind-address=:8080
+            - --health-probe-bind-address=:8081
+          ports:
+            - name: api
+              containerPort: 8088
+            - name: metrics
+              containerPort: 8080
+            - name: health
+              containerPort: 8081

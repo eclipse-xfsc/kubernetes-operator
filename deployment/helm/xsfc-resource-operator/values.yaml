@@ -1,0 +1,8 @@
+image:
+  repository: ghcr.io/xfsc/xsfc-resource-operator
+  tag: latest
+  pullPolicy: IfNotPresent
+serviceMonitor:
+  enabled: true
+prometheusRule:
+  enabled: true

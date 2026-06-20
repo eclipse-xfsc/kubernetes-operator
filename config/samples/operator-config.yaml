@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: xsfc-resource-operator-config
+  namespace: xsfc-system
+data:
+  config.yaml: |
+    excludedNamespaces:
+      - kube-system
+      - kube-public
+      - kube-node-lease
+    resourceTypes:
+      telemetry:
+        module: telemetry
+        description: OpenTelemetry environment variables
+      database.postgres:
+        module: postgres
+        description: PostgreSQL connection settings
+      cache.redis:
+        module: redis
+        description: Redis connection settings
+      objectstore.s3:
+        module: s3
+        description: S3-compatible object store settings
+      vault:
+        module: vault
+        description: OpenBao/Vault access settings
