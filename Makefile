@@ -11,11 +11,16 @@ generate: generate-goa generate-k8s
 
 .PHONY: generate-goa
 generate-goa:
-	go generate ./cmd/apigen
+	goa gen $(MODULE)/design -o .
 
 .PHONY: generate-k8s
 generate-k8s:
 	controller-gen object paths="./api/..."
+
+.PHONY: clean-generated
+clean-generated:
+	rm -rf gen
+	find api -name "zz_generated.deepcopy.go" -delete
 
 .PHONY: build
 build:
@@ -38,5 +43,5 @@ install-tools:
 	go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
 	go install goa.design/goa/v3/cmd/goa@latest
 
-.PHONY: all
-all: tidy generate manifests build
+.PHONY: regenerate
+regenerate: clean-generated generate

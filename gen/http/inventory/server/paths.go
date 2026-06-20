@@ -3,9 +3,9 @@
 // HTTP request path constructors for the inventory service.
 //
 // Command:
-// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design
+// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design -o .
 
-package client
+package server
 
 import (
 	"fmt"

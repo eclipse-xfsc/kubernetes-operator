@@ -3,14 +3,14 @@
 // inventory service
 //
 // Command:
-// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design
+// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design -o .
 
 package inventory
 
 import (
 	"context"
 
-	inventoryviews "github.com/eclipse-xfsc/kubernetes-operator/cmd/apigen/gen/inventory/views"
+	inventoryviews "github.com/eclipse-xfsc/kubernetes-operator/gen/inventory/views"
 )
 
 // Service is the inventory service interface.

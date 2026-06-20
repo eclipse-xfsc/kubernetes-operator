@@ -3,7 +3,7 @@
 // inventory HTTP server encoders and decoders
 //
 // Command:
-// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design
+// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design -o .
 
 package server
 
@@ -11,8 +11,8 @@ import (
 	"context"
 	"net/http"
 
-	inventory "github.com/eclipse-xfsc/kubernetes-operator/cmd/apigen/gen/inventory"
-	inventoryviews "github.com/eclipse-xfsc/kubernetes-operator/cmd/apigen/gen/inventory/views"
+	inventory "github.com/eclipse-xfsc/kubernetes-operator/gen/inventory"
+	inventoryviews "github.com/eclipse-xfsc/kubernetes-operator/gen/inventory/views"
 	goahttp "goa.design/goa/v3/http"
 )
 

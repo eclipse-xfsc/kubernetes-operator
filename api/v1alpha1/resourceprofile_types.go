@@ -2,11 +2,14 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+// +kubebuilder:object:generate=true
 type ResourceProfileSpec struct {
 	Product  ProductRef       `json:"product,omitempty"`
 	Exports  []ResourceExport `json:"exports,omitempty"`
 	Requires []ResourceNeed   `json:"requires,omitempty"`
 }
+
+// +kubebuilder:object:generate=true
 type ResourceProfileStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }

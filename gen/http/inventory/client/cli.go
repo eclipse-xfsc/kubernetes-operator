@@ -3,12 +3,12 @@
 // inventory HTTP client CLI support package
 //
 // Command:
-// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design
+// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design -o .
 
 package client
 
 import (
-	inventory "github.com/eclipse-xfsc/kubernetes-operator/cmd/apigen/gen/inventory"
+	inventory "github.com/eclipse-xfsc/kubernetes-operator/gen/inventory"
 )
 
 // BuildAccountsByConsumerPayload builds the payload for the inventory

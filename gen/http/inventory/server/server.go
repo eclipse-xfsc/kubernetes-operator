@@ -3,7 +3,7 @@
 // inventory HTTP server
 //
 // Command:
-// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design
+// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design -o .
 
 package server
 
@@ -11,7 +11,7 @@ import (
 	"context"
 	"net/http"
 
-	inventory "github.com/eclipse-xfsc/kubernetes-operator/cmd/apigen/gen/inventory"
+	inventory "github.com/eclipse-xfsc/kubernetes-operator/gen/inventory"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 )

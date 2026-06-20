@@ -3,7 +3,7 @@
 // operator HTTP client CLI support package
 //
 // Command:
-// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design
+// $ goa gen github.com/eclipse-xfsc/kubernetes-operator/design -o .
 
 package cli
 
@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"os"
 
-	inventoryc "github.com/eclipse-xfsc/kubernetes-operator/cmd/apigen/gen/http/inventory/client"
+	inventoryc "github.com/eclipse-xfsc/kubernetes-operator/gen/http/inventory/client"
 	goahttp "goa.design/goa/v3/http"
 	goa "goa.design/goa/v3/pkg"
 )
