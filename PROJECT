@@ -1,0 +1,19 @@
+domain: xfsc.io
+layout:
+- go.kubebuilder.io/v4
+projectName: kubernetes-operator
+repo: github.com/eclipse-xfsc/kubernetes-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  group: resources
+  kind: ResourceProvider
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  group: resources
+  kind: ResourceBinding
+  version: v1alpha1
+version: "3"

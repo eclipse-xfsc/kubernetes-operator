@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallet-api
+  namespace: tenant-a
+  annotations:
+    inject.xfsc.io/enabled: "true"
+    inject.xfsc.io/types: "redis"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wallet-api
+  template:
+    metadata:
+      labels:
+        app: wallet-api
+    spec:
+      containers:
+        - name: app
+          image: nginx:1.27

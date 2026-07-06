@@ -1,0 +1,22 @@
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceProvider
+metadata:
+  name: redis-default
+  namespace: infra
+spec:
+  type: redis
+  scope: Cluster
+  description: Shared Redis provider. Accounts are provisioned externally and stored in OpenBao.
+  allow:
+    namespaces:
+      - tenant-a
+      - tenant-b
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: openbao
+  config:
+    env:
+      REDIS_HOST: redis-master.redis.svc.cluster.local
+      REDIS_PORT: "6379"
+      REDIS_TLS: "true"
+      REDIS_CLUSTER: "false"

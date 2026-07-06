@@ -1,0 +1,12 @@
+resources:
+  - namespace.yaml
+  - ../crd/resources.xfsc.io_resourceproviders.yaml
+  - ../crd/resources.xfsc.io_resourcebindings.yaml
+  - ../rbac/service_account.yaml
+  - ../rbac/role.yaml
+  - ../rbac/role_binding.yaml
+  - ../manager/manager.yaml
+  - ../webhook/service.yaml
+  - ../webhook/certificate.yaml
+  - ../webhook/mutating_webhook.yaml
+namespace: xsfc-system
