@@ -44,5 +44,6 @@ type Module interface {
 	Provide(ctx context.Context, obj client.Object) ([]Provider, error)
 	Consume(ctx context.Context, obj client.Object) ([]Consumer, error)
 	Inject(ctx context.Context, req InjectionRequest) (*InjectionResult, error)
+	Provision(ctx context.Context, req ProvisionRequest) (*ProvisionResult, error)
 	CreateResources(ctx context.Context, req CreateResourceRequest) ([]client.Object, error)
 }
