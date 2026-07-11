@@ -45,9 +45,6 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{- define "resource-operator.certSecretName" -}}
-{{- default (printf "%s-webhook-server-cert" (include "resource-operator.fullname" .) | trunc 63 | trimSuffix "-") .Values.webhook.certificate.secretName -}}
+{{- default (printf "%s-webhook-server-cert" (include "resource-operator.fullname" .) | trunc 63 | trimSuffix "-") .Values.webhook.tls.secretName -}}
 {{- end -}}
 
-{{- define "resource-operator.issuerName" -}}
-{{- default (printf "%s-selfsigned" (include "resource-operator.fullname" .) | trunc 63 | trimSuffix "-") .Values.webhook.certificate.issuer.name -}}
-{{- end -}}

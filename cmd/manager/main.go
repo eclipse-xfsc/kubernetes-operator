@@ -34,8 +34,12 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "metrics address")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "probe address")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "leader election")
+	zapOpts := zap.Options{Development: true}
+	zapOpts.BindFlags(flag.CommandLine)
 	flag.Parse()
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
+	setupLog := ctrl.Log.WithName("setup")
+	setupLog.Info("starting resource operator", "leaderElection", enableLeaderElection, "metricsAddress", metricsAddr, "probeAddress", probeAddr)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -46,15 +50,24 @@ func main() {
 		WebhookServer:          ctrlwebhook.NewServer(ctrlwebhook.Options{Port: 9443, TLSOpts: []func(*tls.Config){}}),
 	})
 	if err != nil {
+		setupLog.Error(err, "unable to create manager")
 		os.Exit(1)
 	}
-	if err := (&controller.WorkloadReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.WorkloadReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("resource-operator"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to register workload controller")
 		os.Exit(1)
 	}
 	mgr.GetWebhookServer().Register("/mutate-workloads", &ctrlwebhook.Admission{Handler: &webhook.WorkloadMutator{Client: mgr.GetClient(), Decoder: admission.NewDecoder(mgr.GetScheme())}})
+	setupLog.Info("registered mutating webhook", "path", "/mutate-workloads", "port", 9443)
 	_ = mgr.AddHealthzCheck("healthz", healthz.Ping)
 	_ = mgr.AddReadyzCheck("readyz", healthz.Ping)
+	setupLog.Info("manager starting")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "manager stopped with error")
 		os.Exit(1)
 	}
 }

@@ -4,7 +4,6 @@ metadata:
   name: hello-provider
 spec:
   type: hello
-
   outputs:
     env:
       HELLO_MESSAGE: "Hello XSFC!"

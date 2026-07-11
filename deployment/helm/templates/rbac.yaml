@@ -6,18 +6,65 @@ metadata:
   labels:
     {{- include "resource-operator.labels" . | nindent 4 }}
 rules:
-  - apiGroups: ["resources.xfsc.io"]
-    resources: ["resourceproviders", "resourceproviders/status"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
-  - apiGroups: ["apps"]
-    resources: ["deployments"]
-    verbs: ["get", "list", "watch", "update", "patch"]
-  - apiGroups: ["external-secrets.io"]
-    resources: ["externalsecrets"]
-    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["create", "patch"]
+  - apiGroups:
+      - resources.xfsc.io
+    resources:
+      - resourceproviders
+      - resourceproviders/status
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+
+  - apiGroups:
+      - external-secrets.io
+    resources:
+      - externalsecrets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+      - update
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -1,9 +1,9 @@
 replicaCount: 1
 
 image:
-  repository: harbor.example.com/xsfc/resource-operator
-  tag: "0.1.0"
-  pullPolicy: IfNotPresent
+  repository: node-654e3bca7fbeeed18f81d7c7.ps-xaas.io/common-services/kubernetes-operator
+  tag: "dev"
+  pullPolicy: Always
 
 imagePullSecrets: []
 nameOverride: ""
@@ -40,13 +40,17 @@ webhook:
           - kube-public
           - kube-node-lease
           - xsfc-system
-  certificate:
-    enabled: true
-    issuer:
-      create: true
-      kind: Issuer
-      name: ""
+  tls:
     secretName: ""
+    validityDays: 365
+    caValidityDays: 3650
+    bootstrap:
+      enabled: true
+      # The image must contain both kubectl and openssl.
+      image:
+        repository: alpine/k8s
+        tag: "1.30.3"
+        pullPolicy: Always
 
 rbac:
   create: true

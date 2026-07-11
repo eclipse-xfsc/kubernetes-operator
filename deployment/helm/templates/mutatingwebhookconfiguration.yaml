@@ -1,14 +1,11 @@
 {{- if .Values.webhook.enabled }}
+{{- $secret := lookup "v1" "Secret" .Release.Namespace (include "resource-operator.certSecretName" .) }}
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
   name: {{ include "resource-operator.fullname" . }}-mutating-webhook
   labels:
     {{- include "resource-operator.labels" . | nindent 4 }}
-  {{- if .Values.webhook.certificate.enabled }}
-  annotations:
-    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "resource-operator.certName" . }}
-  {{- end }}
 webhooks:
   - name: workload-injection.resources.xfsc.io
     admissionReviewVersions: ["v1"]
@@ -16,6 +13,9 @@ webhooks:
     failurePolicy: {{ .Values.webhook.failurePolicy }}
     matchPolicy: Equivalent
     clientConfig:
+      {{- if and $secret $secret.data (index $secret.data "ca.crt") }}
+      caBundle: {{ index $secret.data "ca.crt" }}
+      {{- end }}
       service:
         namespace: {{ .Release.Namespace }}
         name: {{ include "resource-operator.webhookServiceName" . }}
