@@ -15,8 +15,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -29,12 +32,9 @@ type WorkloadReconciler struct {
 func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	started := time.Now()
 	log := ctrl.LoggerFrom(ctx).WithValues("kind", "Deployment", "namespace", req.Namespace, "name", req.Name)
-	log.Info("consumer reconcile started")
-
 	var dep appsv1.Deployment
 	if err := r.Get(ctx, req.NamespacedName, &dep); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("consumer removed")
 			return ctrl.Result{}, nil
 		}
 		log.Error(err, "failed to read consumer")
@@ -43,10 +43,10 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	ann := workloadAnnotations(&dep)
 	if !injection.WantsInjection(ann) {
-		log.Info("deployment discovered but injection is not enabled")
 		return ctrl.Result{}, nil
 	}
 
+	log.Info("consumer reconcile started")
 	log.Info("consumer discovered", "needs", injection.SplitCSV(ann[injection.AnnotationNeeds]), "providers", injection.SplitCSV(ann[injection.AnnotationProviders]))
 	providers, err := injection.ResolveProviders(ctx, r.Client, req.Namespace, ann)
 	if err != nil {
@@ -76,9 +76,15 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				log.Error(err, "failed to install generated resource", "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName())
 				return ctrl.Result{}, err
 			}
-			log.Info("generated resource reconciled", "action", action, "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name, "consumer", dep.Name)
-			if action != "unchanged" {
-				r.event(&dep, corev1.EventTypeNormal, "ResourceApplied", fmt.Sprintf("%s %s/%s %s", built.Object.GetKind(), built.Object.GetNamespace(), built.Object.GetName(), action))
+			switch action {
+			case "created":
+				log.Info("generated resource created", "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name, "consumer", dep.Name)
+				r.event(&dep, corev1.EventTypeNormal, "ResourceCreated", fmt.Sprintf("Created %s %s/%s", built.Object.GetKind(), built.Object.GetNamespace(), built.Object.GetName()))
+			case "updated":
+				log.Info("generated resource updated", "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name, "consumer", dep.Name)
+				r.event(&dep, corev1.EventTypeNormal, "ResourceUpdated", fmt.Sprintf("Updated %s %s/%s", built.Object.GetKind(), built.Object.GetNamespace(), built.Object.GetName()))
+			default:
+				log.V(1).Info("generated resource unchanged", "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name, "consumer", dep.Name)
 			}
 		}
 	}
@@ -103,11 +109,32 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		log.Info("consumer patched", "matchedProducers", providerNames, "oldHash", oldHash, "newHash", newHash)
 		r.event(&dep, corev1.EventTypeNormal, "Injected", fmt.Sprintf("Injected ResourceProviders: %v", providerNames))
 	} else {
-		log.Info("consumer already up to date", "matchedProducers", providerNames, "hash", newHash)
+		log.V(1).Info("consumer already up to date", "matchedProducers", providerNames, "hash", newHash)
 	}
 
 	log.Info("consumer reconcile completed", "duration", time.Since(started).String())
 	return ctrl.Result{}, nil
+}
+
+func injectionWatchConfig(dep *appsv1.Deployment) map[string]string {
+	ann := workloadAnnotations(dep)
+	return map[string]string{
+		injection.AnnotationEnabled:   ann[injection.AnnotationEnabled],
+		injection.AnnotationNeeds:     ann[injection.AnnotationNeeds],
+		injection.AnnotationProviders: ann[injection.AnnotationProviders],
+	}
+}
+
+func mapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, value := range a {
+		if b[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func workloadAnnotations(dep *appsv1.Deployment) map[string]string {
@@ -127,7 +154,6 @@ func (r *WorkloadReconciler) mapProviderToConsumers(ctx context.Context, obj cli
 		return nil
 	}
 	log := ctrl.LoggerFrom(ctx).WithValues("producer", provider.Name, "producerNamespace", provider.Namespace, "producerType", provider.Spec.Type)
-	log.Info("resource provider event received; locating consumers")
 	var deployments appsv1.DeploymentList
 	if err := r.List(ctx, &deployments); err != nil {
 		log.Error(err, "failed to list consumers for provider event")
@@ -175,8 +201,89 @@ func upsertUnstructured(ctx context.Context, c client.Client, desired *unstructu
 }
 
 func (r *WorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	consumerPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			dep, ok := e.Object.(*appsv1.Deployment)
+			if !ok || !injection.WantsInjection(workloadAnnotations(dep)) {
+				return false
+			}
+			ctrl.Log.WithName("watch").Info("consumer created", "namespace", dep.Namespace, "name", dep.Name, "needs", injection.SplitCSV(workloadAnnotations(dep)[injection.AnnotationNeeds]))
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldDep, oldOK := e.ObjectOld.(*appsv1.Deployment)
+			newDep, newOK := e.ObjectNew.(*appsv1.Deployment)
+			if !oldOK || !newOK {
+				return false
+			}
+			oldEnabled := injection.WantsInjection(workloadAnnotations(oldDep))
+			newEnabled := injection.WantsInjection(workloadAnnotations(newDep))
+			if !oldEnabled && !newEnabled {
+				return false
+			}
+
+			// Ignore status-only and metadata noise. Reconcile only when the pod
+			// template/spec or the injection annotations actually changed.
+			specChanged := oldDep.Generation != newDep.Generation
+			annotationsChanged := !mapsEqual(injectionWatchConfig(oldDep), injectionWatchConfig(newDep))
+			if !specChanged && !annotationsChanged {
+				return false
+			}
+
+			action := "updated"
+			if oldEnabled && !newEnabled {
+				action = "injection-disabled"
+			} else if !oldEnabled && newEnabled {
+				action = "injection-enabled"
+			}
+			ctrl.Log.WithName("watch").Info("consumer changed", "action", action, "namespace", newDep.Namespace, "name", newDep.Name, "generation", newDep.Generation)
+			return newEnabled
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			dep, ok := e.Object.(*appsv1.Deployment)
+			if !ok || !injection.WantsInjection(workloadAnnotations(dep)) {
+				return false
+			}
+			ctrl.Log.WithName("watch").Info("consumer deleted", "namespace", dep.Namespace, "name", dep.Name)
+			// The object is gone; there is nothing useful for Reconcile to read.
+			return false
+		},
+		GenericFunc: func(event.GenericEvent) bool { return false },
+	}
+
+	providerPredicate := predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			p, ok := e.Object.(*resourcesv1alpha1.ResourceProvider)
+			if ok {
+				ctrl.Log.WithName("watch").Info("resource provider created", "namespace", p.Namespace, "name", p.Name, "type", p.Spec.Type)
+			}
+			return ok
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldP, oldOK := e.ObjectOld.(*resourcesv1alpha1.ResourceProvider)
+			newP, newOK := e.ObjectNew.(*resourcesv1alpha1.ResourceProvider)
+			if !oldOK || !newOK || oldP.Generation == newP.Generation {
+				return false
+			}
+			ctrl.Log.WithName("watch").Info("resource provider updated", "namespace", newP.Namespace, "name", newP.Name, "type", newP.Spec.Type, "generation", newP.Generation)
+			return true
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			p, ok := e.Object.(*resourcesv1alpha1.ResourceProvider)
+			if ok {
+				ctrl.Log.WithName("watch").Info("resource provider deleted", "namespace", p.Namespace, "name", p.Name, "type", p.Spec.Type)
+			}
+			return ok
+		},
+		GenericFunc: func(event.GenericEvent) bool { return false },
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&appsv1.Deployment{}).
-		Watches(&resourcesv1alpha1.ResourceProvider{}, handler.EnqueueRequestsFromMapFunc(r.mapProviderToConsumers)).
+		For(&appsv1.Deployment{}, builder.WithPredicates(consumerPredicate)).
+		Watches(
+			&resourcesv1alpha1.ResourceProvider{},
+			handler.EnqueueRequestsFromMapFunc(r.mapProviderToConsumers),
+			builder.WithPredicates(providerPredicate),
+		).
 		Complete(r)
 }
