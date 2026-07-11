@@ -37,17 +37,35 @@ spec:
                     selector:
                       type: object
                       additionalProperties: {type: string}
-                config:
+                outputs:
                   type: object
                   properties:
                     env:
                       type: object
                       additionalProperties: {type: string}
-                secretStoreRef:
-                  type: object
-                  properties:
-                    kind: {type: string}
-                    name: {type: string}
+                    externalSecrets:
+                      type: array
+                      items:
+                        type: object
+                        required: [remoteKeyTemplate]
+                        properties:
+                          nameTemplate: {type: string}
+                          targetSecretNameTemplate: {type: string}
+                          refreshInterval: {type: string}
+                          secretStoreRef:
+                            type: object
+                            properties:
+                              kind: {type: string}
+                              name: {type: string}
+                          remoteKeyTemplate: {type: string}
+                          data:
+                            type: array
+                            items:
+                              type: object
+                              required: [envName, property]
+                              properties:
+                                envName: {type: string}
+                                property: {type: string}
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

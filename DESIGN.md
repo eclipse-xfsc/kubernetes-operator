@@ -1,39 +1,52 @@
 # Design
 
-## Decision
+The operator is intentionally annotation-first for Helm users.
 
-The operator intentionally does not provision backing accounts. Account creation and credential rotation are owned by an external tenant-management/provisioning system.
+## Removed ResourceBinding
 
-The handover contract is `ResourceBinding`:
+`ResourceBinding` was removed because it forced product charts or tenant tooling to create one extra object for the common case. Most bindings are deterministic:
 
-- points to the concrete consumer workload
-- points to the selected provider
-- names the OpenBao remote key
-- defines the secret properties that should become env vars
-- may add binding-specific static env values
+```text
+namespace + workload + needed type -> provider + remoteKeyTemplate
+```
 
-## Why not modules?
+## Runtime flow
 
-A module per product quickly duplicates the same tasks: find provider, render values, create ExternalSecret, patch workload. The only variable part is the declared contract. For runtime injection a generic controller is enough.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Helm
+    participant API as Kubernetes API Server
+    participant WH as XSFC Mutating Webhook
+    participant OP as XSFC Workload Controller
+    participant ESO as External Secrets Operator
+    participant Bao as OpenBao
+    participant Pod
 
-Provider-specific logic should exist only in provisioners, not in the injector.
+    Helm->>API: apply ResourceProvider
+    Helm->>API: apply Deployment with inject.xfsc.io/needs
+    API->>WH: AdmissionReview
+    WH->>API: list ResourceProviders
+    WH->>WH: resolve provider and patch env
+    WH-->>API: JSONPatch
+    OP->>API: reconcile Deployment
+    OP->>API: create/update ExternalSecret
+    ESO->>Bao: read rendered remoteKey
+    ESO->>API: create/update Kubernetes Secret
+    API->>Pod: start pod with env and secretKeyRef
+```
 
-## Admission webhook vs controller
+## Provider resolution
 
-Both are included:
+The webhook and controller use the same resolution function:
 
-- The webhook mutates workloads at creation/update time.
-- The binding controller creates ExternalSecret and also patches existing workloads when a binding changes.
+1. Read pod template annotations.
+2. If `inject.xfsc.io/providers` is set, match by provider name or `namespace/name`.
+3. Otherwise match `inject.xfsc.io/needs` against `spec.type`.
+4. Enforce `spec.allow.namespaces`.
+5. Patch static env and secret-backed env.
+6. The controller creates ExternalSecrets.
 
-This avoids depending solely on restart/redeploy order.
+## Secret rule
 
-## Production gaps to finish
-
-- Strong CRD validation with CEL rules.
-- Namespace authorization enforcement for `provider.spec.allow`.
-- Template rendering for remote keys and env values.
-- CronJob pod-template patch path.
-- Server-side apply instead of update.
-- Proper deep-copy generation via controller-gen.
-- Integration tests with envtest.
-- Helm chart packaging.
+The operator never creates secret values. It creates only ExternalSecret objects. Credentials must already exist in OpenBao, usually created by tenant management.

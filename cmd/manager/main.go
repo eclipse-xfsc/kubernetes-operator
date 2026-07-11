@@ -9,7 +9,6 @@ import (
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/controller"
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/webhook"
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -26,7 +25,6 @@ var scheme = runtime.NewScheme()
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(appsv1.AddToScheme(scheme))
-	utilruntime.Must(batchv1.AddToScheme(scheme))
 	utilruntime.Must(resourcesv1alpha1.AddToScheme(scheme))
 }
 
@@ -44,13 +42,13 @@ func main() {
 		Metrics:                metricsserver.Options{BindAddress: metricsAddr},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "kubernetes-operator.xfsc.io",
+		LeaderElectionID:       "resource-operator.xfsc.io",
 		WebhookServer:          ctrlwebhook.NewServer(ctrlwebhook.Options{Port: 9443, TLSOpts: []func(*tls.Config){}}),
 	})
 	if err != nil {
 		os.Exit(1)
 	}
-	if err := (&controller.ResourceBindingReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr); err != nil {
+	if err := (&controller.WorkloadReconciler{Client: mgr.GetClient(), Scheme: mgr.GetScheme()}).SetupWithManager(mgr); err != nil {
 		os.Exit(1)
 	}
 	mgr.GetWebhookServer().Register("/mutate-workloads", &ctrlwebhook.Admission{Handler: &webhook.WorkloadMutator{Client: mgr.GetClient(), Decoder: admission.NewDecoder(mgr.GetScheme())}})

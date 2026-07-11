@@ -1,5 +1,10 @@
 spec:
   template:
+    metadata:
+      annotations:
+        inject.xfsc.io/enabled: "true"
+        inject.xfsc.io/needs: redis
+        inject.xfsc.io/hash: <calculated>
     spec:
       containers:
         - name: app
@@ -12,8 +17,6 @@ spec:
               value: "true"
             - name: REDIS_CLUSTER
               value: "false"
-            - name: REDIS_DB
-              value: "0"
             - name: REDIS_USERNAME
               valueFrom:
                 secretKeyRef:

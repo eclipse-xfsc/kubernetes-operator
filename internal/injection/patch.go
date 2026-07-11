@@ -1,20 +1,24 @@
 package injection
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
 	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
+	"github.com/eclipse-xfsc/kubernetes-operator/internal/render"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 const (
-	AnnotationEnabled = "inject.xfsc.io/enabled"
-	AnnotationTypes   = "inject.xfsc.io/types"
-	AnnotationHash    = "inject.xfsc.io/hash"
+	AnnotationEnabled   = "inject.xfsc.io/enabled"
+	AnnotationNeeds     = "inject.xfsc.io/needs"
+	AnnotationProviders = "inject.xfsc.io/providers"
+	AnnotationHash      = "inject.xfsc.io/hash"
 )
 
-func PatchWorkload(obj *unstructured.Unstructured, bindings []resourcesv1alpha1.ResourceBinding, providers map[string]resourcesv1alpha1.ResourceProvider) error {
+func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1.ResourceProvider) error {
 	containers, found, err := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
 	if err != nil || !found {
 		return fmt.Errorf("workload has no pod template containers")
@@ -25,25 +29,20 @@ func PatchWorkload(obj *unstructured.Unstructured, bindings []resourcesv1alpha1.
 		if !ok {
 			continue
 		}
-		name, _ := c["name"].(string)
 		env, _ := c["env"].([]any)
-		for _, b := range bindings {
-			if !containerSelected(name, b.Spec.Injection.Containers) {
-				continue
+		for _, p := range providers {
+			ctx := render.Context{Namespace: obj.GetNamespace(), Workload: obj.GetName(), Type: p.Spec.Type, Provider: p.Name, Tenant: obj.GetNamespace()}
+			for k, v := range p.Spec.Outputs.Env {
+				env = upsertEnv(env, k, map[string]any{"name": k, "value": render.Template(v, ctx)})
 			}
-			provider := providers[providerKey(b.Spec.ProviderRef.Namespace, b.Spec.ProviderRef.Name)]
-			for k, v := range provider.Spec.Config.Env {
-				env = upsertEnv(env, k, map[string]any{"name": k, "value": v})
-			}
-			for k, v := range b.Spec.Config.Env {
-				env = upsertEnv(env, k, map[string]any{"name": k, "value": v})
-			}
-			targetSecretName := b.Spec.Secret.TargetSecretName
-			if targetSecretName == "" {
-				targetSecretName = b.Name + "-secret"
-			}
-			for _, d := range b.Spec.Secret.Data {
-				env = upsertEnv(env, d.EnvName, map[string]any{"name": d.EnvName, "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": targetSecretName, "key": d.EnvName}}})
+			for _, es := range p.Spec.Outputs.ExternalSecrets {
+				target := render.Template(es.TargetSecretNameTemplate, ctx)
+				if target == "" {
+					target = fmt.Sprintf("%s-%s", obj.GetName(), p.Spec.Type)
+				}
+				for _, d := range es.Data {
+					env = upsertEnv(env, d.EnvName, map[string]any{"name": d.EnvName, "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": target, "key": d.EnvName}}})
+				}
 			}
 		}
 		c["env"] = env
@@ -52,13 +51,13 @@ func PatchWorkload(obj *unstructured.Unstructured, bindings []resourcesv1alpha1.
 	if err := unstructured.SetNestedSlice(obj.Object, containers, "spec", "template", "spec", "containers"); err != nil {
 		return err
 	}
-
 	ann, _, _ := unstructured.NestedStringMap(obj.Object, "spec", "template", "metadata", "annotations")
 	if ann == nil {
 		ann = map[string]string{}
 	}
-	b, _ := json.Marshal(bindings)
-	ann[AnnotationHash] = fmt.Sprintf("%x", b)
+	b, _ := json.Marshal(providers)
+	sum := sha256.Sum256(b)
+	ann[AnnotationHash] = hex.EncodeToString(sum[:])
 	return unstructured.SetNestedStringMap(obj.Object, ann, "spec", "template", "metadata", "annotations")
 }
 
@@ -71,15 +70,3 @@ func upsertEnv(env []any, name string, item map[string]any) []any {
 	}
 	return append(env, item)
 }
-func containerSelected(name string, selected []string) bool {
-	if len(selected) == 0 {
-		return true
-	}
-	for _, s := range selected {
-		if s == name {
-			return true
-		}
-	}
-	return false
-}
-func providerKey(ns, name string) string { return ns + "/" + name }

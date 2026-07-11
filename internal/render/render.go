@@ -1,36 +1,28 @@
 package render
 
-import (
-	"bytes"
-	"text/template"
-)
+import "strings"
 
 type Context struct {
-	Consumer struct{ Name, Namespace, Kind string }
-	Binding  struct{ Name, Namespace, Type string }
-	Provider struct{ Name, Namespace, Type string }
+	Namespace string
+	Workload  string
+	Type      string
+	Provider  string
+	Tenant    string
 }
 
-func String(s string, ctx Context) (string, error) {
-	t, err := template.New("xsfc").Option("missingkey=error").Parse(s)
-	if err != nil {
-		return "", err
+func Template(s string, ctx Context) string {
+	repl := map[string]string{
+		"{{ namespace }}":          ctx.Namespace,
+		"{{ consumer.namespace }}": ctx.Namespace,
+		"{{ workload }}":           ctx.Workload,
+		"{{ consumer.name }}":      ctx.Workload,
+		"{{ type }}":               ctx.Type,
+		"{{ provider }}":           ctx.Provider,
+		"{{ tenant }}":             ctx.Tenant,
 	}
-	var b bytes.Buffer
-	if err := t.Execute(&b, ctx); err != nil {
-		return "", err
+	out := s
+	for k, v := range repl {
+		out = strings.ReplaceAll(out, k, v)
 	}
-	return b.String(), nil
-}
-
-func Map(in map[string]string, ctx Context) (map[string]string, error) {
-	out := map[string]string{}
-	for k, v := range in {
-		r, err := String(v, ctx)
-		if err != nil {
-			return nil, err
-		}
-		out[k] = r
-	}
-	return out, nil
+	return out
 }

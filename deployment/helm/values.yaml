@@ -1,0 +1,59 @@
+replicaCount: 1
+
+image:
+  repository: harbor.example.com/xsfc/resource-operator
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+leaderElection:
+  enabled: true
+
+webhook:
+  enabled: true
+  port: 9443
+  servicePort: 443
+  failurePolicy: Fail
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: NotIn
+        values:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - xsfc-system
+  certificate:
+    enabled: true
+    issuer:
+      create: true
+      kind: Issuer
+      name: ""
+    secretName: ""
+
+rbac:
+  create: true
+
+metrics:
+  enabled: false
+  port: 8080
+
+health:
+  port: 8081

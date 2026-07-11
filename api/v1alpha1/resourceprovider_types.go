@@ -7,8 +7,7 @@ type ResourceProviderSpec struct {
 	Description string            `json:"description,omitempty"`
 	Scope       string            `json:"scope,omitempty"` // Namespaced or Cluster
 	Allow       ProviderAllowSpec `json:"allow,omitempty"`
-	Config      ProviderConfig    `json:"config,omitempty"`
-	SecretStore SecretStoreRef    `json:"secretStoreRef,omitempty"`
+	Outputs     ProviderOutputs   `json:"outputs,omitempty"`
 }
 
 type ProviderAllowSpec struct {
@@ -16,13 +15,28 @@ type ProviderAllowSpec struct {
 	Selector   map[string]string `json:"selector,omitempty"`
 }
 
-type ProviderConfig struct {
-	Env map[string]string `json:"env,omitempty"`
+type ProviderOutputs struct {
+	Env             map[string]string      `json:"env,omitempty"`
+	ExternalSecrets []ExternalSecretOutput `json:"externalSecrets,omitempty"`
+}
+
+type ExternalSecretOutput struct {
+	NameTemplate             string              `json:"nameTemplate,omitempty"`
+	TargetSecretNameTemplate string              `json:"targetSecretNameTemplate,omitempty"`
+	RefreshInterval          string              `json:"refreshInterval,omitempty"`
+	SecretStoreRef           SecretStoreRef      `json:"secretStoreRef,omitempty"`
+	RemoteKeyTemplate        string              `json:"remoteKeyTemplate"`
+	Data                     []ExternalSecretKey `json:"data,omitempty"`
 }
 
 type SecretStoreRef struct {
 	Kind string `json:"kind,omitempty"` // SecretStore or ClusterSecretStore
 	Name string `json:"name,omitempty"`
+}
+
+type ExternalSecretKey struct {
+	EnvName  string `json:"envName"`
+	Property string `json:"property"`
 }
 
 type ResourceProviderStatus struct {

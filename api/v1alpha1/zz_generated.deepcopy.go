@@ -2,7 +2,7 @@
 
 package v1alpha1
 
-import "k8s.io/apimachinery/pkg/runtime"
+import runtime "k8s.io/apimachinery/pkg/runtime"
 
 func (in *ResourceProvider) DeepCopyObject() runtime.Object {
 	out := new(ResourceProvider)
@@ -11,16 +11,6 @@ func (in *ResourceProvider) DeepCopyObject() runtime.Object {
 }
 func (in *ResourceProviderList) DeepCopyObject() runtime.Object {
 	out := new(ResourceProviderList)
-	*out = *in
-	return out
-}
-func (in *ResourceBinding) DeepCopyObject() runtime.Object {
-	out := new(ResourceBinding)
-	*out = *in
-	return out
-}
-func (in *ResourceBindingList) DeepCopyObject() runtime.Object {
-	out := new(ResourceBindingList)
 	*out = *in
 	return out
 }

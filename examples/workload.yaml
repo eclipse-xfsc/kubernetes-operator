@@ -3,9 +3,6 @@ kind: Deployment
 metadata:
   name: wallet-api
   namespace: tenant-a
-  annotations:
-    inject.xfsc.io/enabled: "true"
-    inject.xfsc.io/types: "redis"
 spec:
   replicas: 1
   selector:
@@ -15,6 +12,9 @@ spec:
     metadata:
       labels:
         app: wallet-api
+      annotations:
+        inject.xfsc.io/enabled: "true"
+        inject.xfsc.io/needs: "redis"
     spec:
       containers:
         - name: app

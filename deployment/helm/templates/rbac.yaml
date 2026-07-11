@@ -1,0 +1,36 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "resource-operator.fullname" . }}
+  labels:
+    {{- include "resource-operator.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["resources.xfsc.io"]
+    resources: ["resourceproviders", "resourceproviders/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "resource-operator.fullname" . }}
+  labels:
+    {{- include "resource-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "resource-operator.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "resource-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

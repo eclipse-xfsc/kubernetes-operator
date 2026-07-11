@@ -1,0 +1,10 @@
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceProvider
+metadata:
+  name: hello-provider
+spec:
+  type: hello
+
+  outputs:
+    env:
+      HELLO_MESSAGE: "Hello XSFC!"
