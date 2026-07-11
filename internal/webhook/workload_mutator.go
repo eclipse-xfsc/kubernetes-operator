@@ -57,7 +57,7 @@ func (m *WorkloadMutator) Handle(ctx context.Context, req admission.Request) adm
 		providerNames = append(providerNames, providers[i].Name)
 	}
 
-	if err := injection.PatchWorkload(obj, providers); err != nil {
+	if _, err := injection.PatchWorkload(obj, providers, nil, nil); err != nil {
 		log.Error(err, "failed to mutate workload", "providers", providerNames)
 		return admission.Errored(http.StatusInternalServerError, err)
 	}

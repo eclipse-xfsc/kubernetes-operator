@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
@@ -54,40 +55,9 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		r.event(&dep, corev1.EventTypeWarning, "ProviderResolutionFailed", err.Error())
 		return ctrl.Result{}, err
 	}
-	if len(providers) == 0 {
-		log.Info("consumer has no matching resource providers")
-		r.event(&dep, corev1.EventTypeWarning, "NoProvidersFound", "No matching ResourceProvider objects were found")
-		return ctrl.Result{}, nil
-	}
-
+	missing := missingProviderRequests(ann, providers)
 	providerNames := make([]string, 0, len(providers))
-	for i := range providers {
-		providerNames = append(providerNames, providers[i].Name)
-		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerNamespace", providers[i].Namespace, "producerType", providers[i].Spec.Type)
-
-		esList, err := injection.BuildExternalSecrets(&providers[i], dep.Namespace, dep.Name)
-		if err != nil {
-			log.Error(err, "failed to build ExternalSecret", "producer", providers[i].Name)
-			return ctrl.Result{}, err
-		}
-		for _, built := range esList {
-			action, err := upsertUnstructured(ctx, r.Client, built.Object)
-			if err != nil {
-				log.Error(err, "failed to install generated resource", "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName())
-				return ctrl.Result{}, err
-			}
-			switch action {
-			case "created":
-				log.Info("generated resource created", "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name, "consumer", dep.Name)
-				r.event(&dep, corev1.EventTypeNormal, "ResourceCreated", fmt.Sprintf("Created %s %s/%s", built.Object.GetKind(), built.Object.GetNamespace(), built.Object.GetName()))
-			case "updated":
-				log.Info("generated resource updated", "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name, "consumer", dep.Name)
-				r.event(&dep, corev1.EventTypeNormal, "ResourceUpdated", fmt.Sprintf("Updated %s %s/%s", built.Object.GetKind(), built.Object.GetNamespace(), built.Object.GetName()))
-			default:
-				log.V(1).Info("generated resource unchanged", "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name, "consumer", dep.Name)
-			}
-		}
-	}
+	generated := map[string][]string{}
 
 	obj := &unstructured.Unstructured{}
 	obj.SetAPIVersion("apps/v1")
@@ -95,21 +65,70 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if err := r.Get(ctx, req.NamespacedName, obj); err != nil {
 		return ctrl.Result{}, err
 	}
+	oldState := injection.ReadManagedState(obj)
+
+	for i := range providers {
+		providerKey := providers[i].Namespace + "/" + providers[i].Name
+		providerNames = append(providerNames, providers[i].Name)
+		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerNamespace", providers[i].Namespace, "producerType", providers[i].Spec.Type)
+		esList, err := injection.BuildExternalSecrets(&providers[i], dep.Namespace, dep.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		for _, built := range esList {
+			resourceID := strings.Join([]string{built.Object.GetAPIVersion(), built.Object.GetKind(), built.Object.GetNamespace(), built.Object.GetName()}, "|")
+			generated[providerKey] = append(generated[providerKey], resourceID)
+			action, err := upsertUnstructured(ctx, r.Client, built.Object)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if action == "created" || action == "updated" {
+				log.Info("generated resource "+action, "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name)
+			}
+		}
+	}
+
+	// Remove generated resources that were owned by a provider but are no longer desired.
+	desiredResources := map[string]struct{}{}
+	for _, ids := range generated {
+		for _, id := range ids {
+			desiredResources[id] = struct{}{}
+		}
+	}
+	for providerKey, oldProvider := range oldState.Providers {
+		for _, id := range oldProvider.Resources {
+			if _, keep := desiredResources[id]; keep {
+				continue
+			}
+			if err := deleteManagedResource(ctx, r.Client, id); err != nil {
+				log.Error(err, "failed to delete obsolete generated resource", "provider", providerKey, "resource", id)
+				return ctrl.Result{}, err
+			}
+			log.Info("generated resource deleted", "provider", providerKey, "resource", id)
+			r.event(&dep, corev1.EventTypeNormal, "ResourceDeleted", "Deleted obsolete managed resource "+id)
+		}
+	}
+
 	oldHash, _, _ := unstructured.NestedString(obj.Object, "spec", "template", "metadata", "annotations", injection.AnnotationHash)
-	if err := injection.PatchWorkload(obj, providers); err != nil {
+	_, err = injection.PatchWorkload(obj, providers, generated, missing)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 	newHash, _, _ := unstructured.NestedString(obj.Object, "spec", "template", "metadata", "annotations", injection.AnnotationHash)
-
-	if oldHash != newHash {
+	oldWarning := dep.Annotations[injection.AnnotationWarning]
+	newWarning := obj.GetAnnotations()[injection.AnnotationWarning]
+	if oldHash != newHash || oldWarning != newWarning || managedStateChanged(oldState, injection.ReadManagedState(obj)) {
 		if err := r.Update(ctx, obj); err != nil {
-			log.Error(err, "failed to patch consumer", "oldHash", oldHash, "newHash", newHash)
 			return ctrl.Result{}, err
 		}
-		log.Info("consumer patched", "matchedProducers", providerNames, "oldHash", oldHash, "newHash", newHash)
-		r.event(&dep, corev1.EventTypeNormal, "Injected", fmt.Sprintf("Injected ResourceProviders: %v", providerNames))
-	} else {
-		log.V(1).Info("consumer already up to date", "matchedProducers", providerNames, "hash", newHash)
+		log.Info("consumer patched", "matchedProducers", providerNames, "missingProviders", missing, "oldHash", oldHash, "newHash", newHash)
+		if len(missing) > 0 {
+			msg := "Required ResourceProviders are unavailable: " + strings.Join(missing, ", ") + ". Managed injections for them were removed."
+			r.event(&dep, corev1.EventTypeWarning, "ProviderUnavailable", msg)
+			log.Info("consumer warning applied", "missingProviders", missing)
+		} else {
+			r.event(&dep, corev1.EventTypeNormal, "Injected", fmt.Sprintf("Reconciled ResourceProviders: %v", providerNames))
+		}
 	}
 
 	log.Info("consumer reconcile completed", "duration", time.Since(started).String())
@@ -198,6 +217,49 @@ func upsertUnstructured(ctx context.Context, c client.Client, desired *unstructu
 		return "", err
 	}
 	return "updated", nil
+}
+
+func missingProviderRequests(ann map[string]string, providers []resourcesv1alpha1.ResourceProvider) []string {
+	foundTypes := map[string]bool{}
+	foundNames := map[string]bool{}
+	for _, p := range providers {
+		foundTypes[p.Spec.Type] = true
+		foundNames[p.Name] = true
+		foundNames[p.Namespace+"/"+p.Name] = true
+	}
+	missing := []string{}
+	for _, t := range injection.SplitCSV(ann[injection.AnnotationNeeds]) {
+		if !foundTypes[t] {
+			missing = append(missing, t)
+		}
+	}
+	for _, n := range injection.SplitCSV(ann[injection.AnnotationProviders]) {
+		if !foundNames[n] {
+			missing = append(missing, n)
+		}
+	}
+	return missing
+}
+
+func deleteManagedResource(ctx context.Context, c client.Client, id string) error {
+	parts := strings.Split(id, "|")
+	if len(parts) != 4 {
+		return fmt.Errorf("invalid managed resource id %q", id)
+	}
+	obj := &unstructured.Unstructured{}
+	obj.SetAPIVersion(parts[0])
+	obj.SetKind(parts[1])
+	obj.SetNamespace(parts[2])
+	obj.SetName(parts[3])
+	err := c.Delete(ctx, obj)
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+func managedStateChanged(a, b injection.ManagedState) bool {
+	return fmt.Sprintf("%v", a) != fmt.Sprintf("%v", b)
 }
 
 func (r *WorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {

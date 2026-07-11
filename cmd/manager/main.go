@@ -53,6 +53,10 @@ func main() {
 		setupLog.Error(err, "unable to create manager")
 		os.Exit(1)
 	}
+	if err := mgr.Add(&controller.InventoryLogger{Client: mgr.GetClient()}); err != nil {
+		setupLog.Error(err, "unable to register inventory logger")
+		os.Exit(1)
+	}
 	if err := (&controller.WorkloadReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
