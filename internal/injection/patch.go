@@ -29,7 +29,7 @@ type ManagedProviderState struct {
 }
 
 type ManagedState struct {
-	Providers map[string]ManagedProviderState `json:"providers,omitempty"` // namespace/name
+	Providers map[string]ManagedProviderState `json:"providers,omitempty"` // cluster-scoped provider name
 }
 
 func ReadManagedState(obj *unstructured.Unstructured) ManagedState {
@@ -66,7 +66,7 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 		env, _ := c["env"].([]any)
 		env = removeManagedEnv(env, managedNames)
 		for _, p := range providers {
-			key := p.Namespace + "/" + p.Name
+			key := p.Name
 			ps := state.Providers[key]
 			ps.Type = p.Spec.Type
 			if resources != nil {

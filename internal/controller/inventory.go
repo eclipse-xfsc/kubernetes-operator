@@ -21,7 +21,7 @@ func (i *InventoryLogger) Start(ctx context.Context) error {
 		log.Info("installed resource providers", "count", len(providers.Items))
 		for idx := range providers.Items {
 			p := &providers.Items[idx]
-			log.Info("resource provider installed", "name", p.Name, "namespace", p.Namespace, "type", p.Spec.Type, "staticEnvCount", len(p.Spec.Outputs.Env), "externalSecretCount", len(p.Spec.Outputs.ExternalSecrets))
+			log.Info("resource provider installed", "name", p.Name, "type", p.Spec.Type, "staticEnvCount", len(p.Spec.Outputs.Env), "externalSecretCount", len(p.Spec.Outputs.ExternalSecrets))
 		}
 	}
 	var deployments appsv1.DeploymentList

@@ -68,9 +68,9 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	oldState := injection.ReadManagedState(obj)
 
 	for i := range providers {
-		providerKey := providers[i].Namespace + "/" + providers[i].Name
+		providerKey := providers[i].Name
 		providerNames = append(providerNames, providers[i].Name)
-		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerNamespace", providers[i].Namespace, "producerType", providers[i].Spec.Type)
+		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerType", providers[i].Spec.Type)
 		esList, err := injection.BuildExternalSecrets(&providers[i], dep.Namespace, dep.Name)
 		if err != nil {
 			return ctrl.Result{}, err
@@ -172,7 +172,7 @@ func (r *WorkloadReconciler) mapProviderToConsumers(ctx context.Context, obj cli
 	if !ok {
 		return nil
 	}
-	log := ctrl.LoggerFrom(ctx).WithValues("producer", provider.Name, "producerNamespace", provider.Namespace, "producerType", provider.Spec.Type)
+	log := ctrl.LoggerFrom(ctx).WithValues("producer", provider.Name, "producerType", provider.Spec.Type)
 	var deployments appsv1.DeploymentList
 	if err := r.List(ctx, &deployments); err != nil {
 		log.Error(err, "failed to list consumers for provider event")
@@ -225,7 +225,6 @@ func missingProviderRequests(ann map[string]string, providers []resourcesv1alpha
 	for _, p := range providers {
 		foundTypes[p.Spec.Type] = true
 		foundNames[p.Name] = true
-		foundNames[p.Namespace+"/"+p.Name] = true
 	}
 	missing := []string{}
 	for _, t := range injection.SplitCSV(ann[injection.AnnotationNeeds]) {
@@ -317,7 +316,7 @@ func (r *WorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		CreateFunc: func(e event.CreateEvent) bool {
 			p, ok := e.Object.(*resourcesv1alpha1.ResourceProvider)
 			if ok {
-				ctrl.Log.WithName("watch").Info("resource provider created", "namespace", p.Namespace, "name", p.Name, "type", p.Spec.Type)
+				ctrl.Log.WithName("watch").Info("resource provider created", "name", p.Name, "type", p.Spec.Type)
 			}
 			return ok
 		},
@@ -333,7 +332,7 @@ func (r *WorkloadReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			p, ok := e.Object.(*resourcesv1alpha1.ResourceProvider)
 			if ok {
-				ctrl.Log.WithName("watch").Info("resource provider deleted", "namespace", p.Namespace, "name", p.Name, "type", p.Spec.Type)
+				ctrl.Log.WithName("watch").Info("resource provider deleted", "name", p.Name, "type", p.Spec.Type)
 			}
 			return ok
 		},

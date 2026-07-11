@@ -10,7 +10,7 @@ spec:
     plural: resourceproviders
     singular: resourceprovider
     shortNames: [rp]
-  scope: Namespaced
+  scope: Cluster
   versions:
     - name: v1alpha1
       served: true

@@ -5,7 +5,6 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 type ResourceProviderSpec struct {
 	Type        string            `json:"type"`
 	Description string            `json:"description,omitempty"`
-	Scope       string            `json:"scope,omitempty"` // Namespaced or Cluster
 	Allow       ProviderAllowSpec `json:"allow,omitempty"`
 	Outputs     ProviderOutputs   `json:"outputs,omitempty"`
 }
@@ -30,7 +29,7 @@ type ExternalSecretOutput struct {
 }
 
 type SecretStoreRef struct {
-	Kind string `json:"kind,omitempty"` // SecretStore or ClusterSecretStore
+	Kind string `json:"kind,omitempty"`
 	Name string `json:"name,omitempty"`
 }
 
@@ -45,6 +44,7 @@ type ResourceProviderStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster,shortName=rp
 // +kubebuilder:subresource:status
 type ResourceProvider struct {
 	metav1.TypeMeta   `json:",inline"`
