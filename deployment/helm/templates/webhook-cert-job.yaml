@@ -1,0 +1,94 @@
+{{- if and .Values.webhook.enabled .Values.webhook.tls.bootstrap.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "resource-operator.fullname" . }}-cert-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "resource-operator.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "resource-operator.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "resource-operator.fullname" . }}-cert-bootstrap
+      containers:
+        - name: cert-bootstrap
+          image: "{{ .Values.webhook.tls.bootstrap.image.repository }}:{{ .Values.webhook.tls.bootstrap.image.tag }}"
+          imagePullPolicy: {{ .Values.webhook.tls.bootstrap.image.pullPolicy }}
+          env:
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: SECRET_NAME
+              value: {{ include "resource-operator.certSecretName" . | quote }}
+            - name: SERVICE_NAME
+              value: {{ include "resource-operator.webhookServiceName" . | quote }}
+            - name: WEBHOOK_CONFIG_NAME
+              value: {{ printf "%s-mutating-webhook" (include "resource-operator.fullname" .) | quote }}
+            - name: CERT_VALIDITY_DAYS
+              value: {{ .Values.webhook.tls.validityDays | quote }}
+            - name: CA_VALIDITY_DAYS
+              value: {{ .Values.webhook.tls.caValidityDays | quote }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              apk add --no-cache openssl
+              if kubectl -n "$NAMESPACE" get secret "$SECRET_NAME" >/dev/null 2>&1; then
+                echo "TLS secret $SECRET_NAME already exists; reusing it."
+              else
+                WORKDIR="$(mktemp -d)"
+                trap 'rm -rf "$WORKDIR"' EXIT
+                cd "$WORKDIR"
+
+                openssl genrsa -out ca.key 4096
+                openssl req -x509 -new -nodes -key ca.key \
+                  -sha256 -days "$CA_VALIDITY_DAYS" \
+                  -subj "/CN=${SERVICE_NAME}.${NAMESPACE}.svc-ca" \
+                  -out ca.crt
+
+                printf '%s\n' \
+                  '[req]' \
+                  'distinguished_name = dn' \
+                  'req_extensions = req_ext' \
+                  'prompt = no' \
+                  '' \
+                  '[dn]' \
+                  "CN = ${SERVICE_NAME}.${NAMESPACE}.svc" \
+                  '' \
+                  '[req_ext]' \
+                  'subjectAltName = @alt_names' \
+                  '' \
+                  '[alt_names]' \
+                  "DNS.1 = ${SERVICE_NAME}" \
+                  "DNS.2 = ${SERVICE_NAME}.${NAMESPACE}" \
+                  "DNS.3 = ${SERVICE_NAME}.${NAMESPACE}.svc" \
+                  "DNS.4 = ${SERVICE_NAME}.${NAMESPACE}.svc.cluster.local" \
+                  > server.conf
+
+                openssl genrsa -out tls.key 2048
+                openssl req -new -key tls.key -out tls.csr -config server.conf
+                openssl x509 -req -in tls.csr \
+                  -CA ca.crt -CAkey ca.key -CAcreateserial \
+                  -out tls.crt -days "$CERT_VALIDITY_DAYS" -sha256 \
+                  -extensions req_ext -extfile server.conf
+
+                kubectl -n "$NAMESPACE" create secret generic "$SECRET_NAME" \
+                  --from-file=tls.crt=tls.crt \
+                  --from-file=tls.key=tls.key \
+                  --from-file=ca.crt=ca.crt
+              fi
+
+              CA_BUNDLE="$(kubectl -n "$NAMESPACE" get secret "$SECRET_NAME" -o jsonpath='{.data.ca\.crt}')"
+              kubectl patch mutatingwebhookconfiguration "$WEBHOOK_CONFIG_NAME" \
+                --type=json \
+                -p="[{\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_BUNDLE}\"}]"
+
+              echo "Webhook TLS secret and caBundle are ready."
+{{- end }}

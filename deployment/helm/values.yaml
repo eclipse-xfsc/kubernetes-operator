@@ -1,0 +1,63 @@
+replicaCount: 1
+
+image:
+  repository: node-654e3bca7fbeeed18f81d7c7.ps-xaas.io/common-services/kubernetes-operator
+  tag: "dev"
+  pullPolicy: Always
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+resources: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+leaderElection:
+  enabled: true
+
+webhook:
+  enabled: true
+  port: 9443
+  servicePort: 443
+  failurePolicy: Fail
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: NotIn
+        values:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - xsfc-system
+  tls:
+    secretName: ""
+    validityDays: 365
+    caValidityDays: 3650
+    bootstrap:
+      enabled: true
+      # The image must contain both kubectl and openssl.
+      image:
+        repository: alpine/k8s
+        tag: "1.30.3"
+        pullPolicy: Always
+
+rbac:
+  create: true
+
+metrics:
+  enabled: false
+  port: 8080
+
+health:
+  port: 8081
