@@ -1,5 +1,5 @@
 apiVersion: v2
-name: resource-operator
+name: kubernetes-operator
 description: XSFC Resource Injection Operator. Injects ResourceProvider outputs into annotated workloads and creates ExternalSecrets.
 type: application
 version: 0.1.0
