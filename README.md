@@ -184,3 +184,150 @@ External Secrets Operator:
 
 - reads OpenBao
 - creates the Kubernetes Secret
+
+## Watch filtering and lifecycle logs
+
+The Deployment controller only queues workloads where injection is enabled through
+`inject.xfsc.io/enabled: "true"`. Deployments without XSFC injection annotations are
+filtered at the watch level and produce no consumer logs. Status-only Deployment
+updates are ignored.
+
+Lifecycle logs distinguish the operation explicitly:
+
+- `consumer created`, `consumer changed`, `consumer deleted`
+- `resource provider created`, `resource provider updated`, `resource provider deleted`
+- `generated resource created`, `generated resource updated`
+
+Unchanged generated resources and already reconciled consumers are logged only at
+verbosity level 1 (`--zap-log-level=1`) and do not appear in normal info logs.
+
+## Cluster-scoped ResourceProviders
+
+`ResourceProvider` is cluster-scoped. Create it without `metadata.namespace`:
+
+```yaml
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceProvider
+metadata:
+  name: hello-provider
+spec:
+  type: hello
+  outputs:
+    env:
+      HELLO_MESSAGE: "Hello XSFC!"
+```
+
+A provider is available to all namespaces by default. Restrict it with either an allow-list:
+
+```yaml
+spec:
+  allow:
+    namespaces:
+      - tenant-a
+      - tenant-b
+```
+
+or a namespace-label selector:
+
+```yaml
+spec:
+  allow:
+    selector:
+      resources.xfsc.io/injection-enabled: "true"
+```
+
+The selector is matched against labels on the consumer namespace.
+
+### Migration from namespaced providers
+
+Kubernetes does not support changing a CRD scope in place reliably. Back up existing providers, remove the old CRD, install the new cluster-scoped CRD, and recreate providers without a namespace:
+
+```bash
+kubectl get resourceproviders -A -o yaml > resourceproviders-backup.yaml
+kubectl delete crd resourceproviders.resources.xfsc.io
+kubectl apply -f config/crd/resources.xfsc.io_resourceproviders.yaml
+kubectl apply -f examples/redis-provider.yaml
+```
+
+## Consumer-specific environment prefixes
+
+A consumer can optionally prefix every environment variable injected by the operator. Set the prefix on the pod template together with the other injection annotations:
+
+```yaml
+spec:
+  template:
+    metadata:
+      annotations:
+        inject.xfsc.io/enabled: "true"
+        inject.xfsc.io/needs: "vault,redis"
+        inject.xfsc.io/env-prefix: "WALLET"
+```
+
+Given a provider that exports `VAULT_ADDR`, `REDIS_HOST`, and `REDIS_PASSWORD`, the resulting container receives:
+
+```text
+WALLET_VAULT_ADDR
+WALLET_REDIS_HOST
+WALLET_REDIS_PASSWORD
+```
+
+The prefix applies to static values and secret-backed values. Kubernetes Secret keys remain unchanged; only the environment variable name in the consumer is prefixed. Without `inject.xfsc.io/env-prefix`, environment variables are injected under their original names.
+
+Prefixes must be valid environment-variable identifiers. Leading and trailing underscores are normalized, so `WALLET_` is treated as `WALLET`.
+
+The prefix is included in the managed injection lifecycle. Changing or removing it during a Helm upgrade removes the previously managed environment variables and injects the new names.
+
+## Resource-specific modules
+
+Environment and ExternalSecret injection remains generic. Optional resource-specific behavior is dispatched through the module registry by `ResourceProvider.spec.type`.
+
+```text
+Consumer needs redis
+        |
+        v
+Resolve ResourceProvider(type=redis)
+        |
+        +--> Redis module registered? --> reconcile account/provisioning actions
+        |
+        +--> Generate ExternalSecret
+        |
+        +--> Inject environment variables
+```
+
+A module implements the following contract:
+
+```go
+type Module interface {
+    Type() string
+    Reconcile(context.Context, modules.Request) (modules.Result, error)
+}
+```
+
+Modules must be idempotent because the controller may reconcile the same consumer repeatedly. A module can:
+
+- call an external API to create or update an account;
+- create resource-specific Kubernetes CRs;
+- return generated Kubernetes resources in `modules.Result.Resources`.
+
+Returned resources participate in the operator's ownership and cleanup lifecycle. If a provider stops returning a resource, or the provider is removed, the operator deletes that managed resource.
+
+Modules are registered in `cmd/manager/main.go`:
+
+```go
+moduleRegistry := modules.NewRegistry(
+    redisModule,
+    natsModule,
+)
+```
+
+When no module is registered for a provider type, module dispatch is a no-op and the normal injection flow continues. Module execution happens in the workload controller, not in the admission webhook, so admission remains side-effect free.
+
+A Redis adapter is included in `internal/modules/redis`. The operator can register it when an `AccountProvisioner` implementation is available:
+
+```go
+moduleRegistry := modules.NewRegistry(
+    redis.New(redisAccountProvisioner),
+)
+```
+
+The provisioner decides whether it creates the account directly or returns an account-request CR. When no Redis provisioner is wired, Redis remains a normal injection-only provider.

@@ -12,7 +12,6 @@ apiVersion: resources.xfsc.io/v1alpha1
 kind: ResourceProvider
 metadata:
   name: redis-default
-  namespace: infra
 spec:
   type: redis
   scope: Cluster

@@ -7,6 +7,7 @@ import (
 
 	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/controller"
+	"github.com/eclipse-xfsc/kubernetes-operator/internal/modules"
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/webhook"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -57,10 +58,14 @@ func main() {
 		setupLog.Error(err, "unable to register inventory logger")
 		os.Exit(1)
 	}
+	moduleRegistry := modules.NewRegistry()
+	// Register optional resource-specific modules here, for example Redis, NATS or Postgres account provisioners.
+
 	if err := (&controller.WorkloadReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("resource-operator"),
+		Modules:  moduleRegistry,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to register workload controller")
 		os.Exit(1)

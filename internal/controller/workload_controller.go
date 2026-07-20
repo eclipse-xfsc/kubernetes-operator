@@ -8,6 +8,7 @@ import (
 
 	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/injection"
+	"github.com/eclipse-xfsc/kubernetes-operator/internal/modules"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +29,7 @@ type WorkloadReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+	Modules  *modules.Registry
 }
 
 func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -48,7 +50,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	log.Info("consumer reconcile started")
-	log.Info("consumer discovered", "needs", injection.SplitCSV(ann[injection.AnnotationNeeds]), "providers", injection.SplitCSV(ann[injection.AnnotationProviders]))
+	log.Info("consumer discovered", "needs", injection.SplitCSV(ann[injection.AnnotationNeeds]), "providers", injection.SplitCSV(ann[injection.AnnotationProviders]), "envPrefix", ann[injection.AnnotationEnvPrefix])
 	providers, err := injection.ResolveProviders(ctx, r.Client, req.Namespace, ann)
 	if err != nil {
 		log.Error(err, "failed to resolve resource providers")
@@ -71,12 +73,43 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		providerKey := providers[i].Name
 		providerNames = append(providerNames, providers[i].Name)
 		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerType", providers[i].Spec.Type)
+
+		moduleResult, moduleFound, err := r.Modules.Reconcile(ctx, modules.Request{
+			Client:      r.Client,
+			Provider:    providers[i],
+			Namespace:   dep.Namespace,
+			Workload:    dep.Name,
+			Annotations: ann,
+		})
+		if err != nil {
+			log.Error(err, "resource module reconciliation failed", "producer", providers[i].Name, "producerType", providers[i].Spec.Type)
+			r.event(&dep, corev1.EventTypeWarning, "ModuleReconcileFailed", err.Error())
+			return ctrl.Result{}, err
+		}
+		if moduleFound {
+			log.Info("resource module reconciled", "producer", providers[i].Name, "producerType", providers[i].Spec.Type, "resourceCount", len(moduleResult.Resources))
+		}
+		for _, moduleResource := range moduleResult.Resources {
+			if moduleResource == nil {
+				continue
+			}
+			resourceID := managedResourceID(moduleResource)
+			generated[providerKey] = append(generated[providerKey], resourceID)
+			action, err := upsertUnstructured(ctx, r.Client, moduleResource)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if action == "created" || action == "updated" {
+				log.Info("module resource "+action, "resourceKind", moduleResource.GetKind(), "resourceNamespace", moduleResource.GetNamespace(), "resourceName", moduleResource.GetName(), "producer", providers[i].Name)
+			}
+		}
+
 		esList, err := injection.BuildExternalSecrets(&providers[i], dep.Namespace, dep.Name)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		for _, built := range esList {
-			resourceID := strings.Join([]string{built.Object.GetAPIVersion(), built.Object.GetKind(), built.Object.GetNamespace(), built.Object.GetName()}, "|")
+			resourceID := managedResourceID(built.Object)
 			generated[providerKey] = append(generated[providerKey], resourceID)
 			action, err := upsertUnstructured(ctx, r.Client, built.Object)
 			if err != nil {
@@ -141,6 +174,7 @@ func injectionWatchConfig(dep *appsv1.Deployment) map[string]string {
 		injection.AnnotationEnabled:   ann[injection.AnnotationEnabled],
 		injection.AnnotationNeeds:     ann[injection.AnnotationNeeds],
 		injection.AnnotationProviders: ann[injection.AnnotationProviders],
+		injection.AnnotationEnvPrefix: ann[injection.AnnotationEnvPrefix],
 	}
 }
 
@@ -238,6 +272,10 @@ func missingProviderRequests(ann map[string]string, providers []resourcesv1alpha
 		}
 	}
 	return missing
+}
+
+func managedResourceID(obj *unstructured.Unstructured) string {
+	return strings.Join([]string{obj.GetAPIVersion(), obj.GetKind(), obj.GetNamespace(), obj.GetName()}, "|")
 }
 
 func deleteManagedResource(ctx context.Context, c client.Client, id string) error {
