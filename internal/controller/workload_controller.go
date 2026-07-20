@@ -74,7 +74,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		providerNames = append(providerNames, providers[i].Name)
 		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerType", providers[i].Spec.Type)
 
-		moduleResult, err := r.Modules.Reconcile(ctx, modules.Request{
+		moduleResult, err := r.Modules.Reconcile(ctx, providers[i].Spec.Type, &modules.Request{
 			Client:      r.Client,
 			Provider:    providers[i],
 			Namespace:   dep.Namespace,
