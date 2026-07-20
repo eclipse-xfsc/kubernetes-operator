@@ -74,21 +74,20 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		providerNames = append(providerNames, providers[i].Name)
 		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerType", providers[i].Spec.Type)
 
-		moduleResult, moduleFound, err := r.Modules.Reconcile(ctx, modules.Request{
+		moduleResult, err := r.Modules.Reconcile(ctx, modules.Request{
 			Client:      r.Client,
 			Provider:    providers[i],
 			Namespace:   dep.Namespace,
 			Workload:    dep.Name,
 			Annotations: ann,
 		})
+
 		if err != nil {
 			log.Error(err, "resource module reconciliation failed", "producer", providers[i].Name, "producerType", providers[i].Spec.Type)
 			r.event(&dep, corev1.EventTypeWarning, "ModuleReconcileFailed", err.Error())
 			return ctrl.Result{}, err
 		}
-		if moduleFound {
-			log.Info("resource module reconciled", "producer", providers[i].Name, "producerType", providers[i].Spec.Type, "resourceCount", len(moduleResult.Resources))
-		}
+
 		for _, moduleResource := range moduleResult.Resources {
 			if moduleResource == nil {
 				continue

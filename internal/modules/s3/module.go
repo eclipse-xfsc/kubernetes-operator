@@ -1,4 +1,4 @@
-package redis
+package s3
 
 import (
 	"context"
@@ -21,7 +21,7 @@ func New(provisioner Provisioner) *Module {
 }
 
 func (m *Module) Type() string {
-	return "redis"
+	return "s3"
 }
 
 func (m *Module) Reconcile(ctx context.Context, req modules.Request) (modules.Result, error) {

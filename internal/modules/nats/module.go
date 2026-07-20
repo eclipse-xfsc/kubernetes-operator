@@ -1,4 +1,4 @@
-package redis
+package nats
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-// Provisioner defines the provider-specific S3 provisioning boundary.
+// Provisioner defines the provider-specific NATS provisioning boundary.
 type Provisioner interface {
-	EnsureBucketAndCredentials(context.Context, modules.Request) ([]*unstructured.Unstructured, error)
+	EnsureAccount(context.Context, modules.Request) ([]*unstructured.Unstructured, error)
 }
 
 type Module struct {
@@ -21,14 +21,14 @@ func New(provisioner Provisioner) *Module {
 }
 
 func (m *Module) Type() string {
-	return "redis"
+	return "nats"
 }
 
 func (m *Module) Reconcile(ctx context.Context, req modules.Request) (modules.Result, error) {
 	if m == nil || m.provisioner == nil {
 		return modules.Result{}, nil
 	}
-	resources, err := m.provisioner.EnsureBucketAndCredentials(ctx, req)
+	resources, err := m.provisioner.EnsureAccount(ctx, req)
 	if err != nil {
 		return modules.Result{}, err
 	}
