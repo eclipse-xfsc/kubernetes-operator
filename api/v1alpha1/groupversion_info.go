@@ -11,6 +11,7 @@ var GroupVersion = schema.GroupVersion{Group: "resources.xfsc.io", Version: "v1a
 var SchemeBuilder = runtime.NewSchemeBuilder(func(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(GroupVersion,
 		&ResourceProvider{}, &ResourceProviderList{},
+		&ResourceClaim{}, &ResourceClaimList{},
 	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil

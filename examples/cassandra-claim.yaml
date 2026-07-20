@@ -1,0 +1,11 @@
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceClaim
+metadata:
+  name: ledger-cassandra
+  namespace: ledger
+spec:
+  type: cassandra
+  secretName: cassandra
+  parameters:
+    keyspace: ledger
+    username: ledger

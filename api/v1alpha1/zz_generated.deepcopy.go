@@ -100,3 +100,60 @@ func (in *ResourceProviderStatus) DeepCopyInto(out *ResourceProviderStatus) {
 		}
 	}
 }
+
+func (in *ResourceClaim) DeepCopyInto(out *ResourceClaim) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	in.Spec.DeepCopyInto(&out.Spec)
+	in.Status.DeepCopyInto(&out.Status)
+}
+func (in *ResourceClaim) DeepCopy() *ResourceClaim {
+	if in == nil {
+		return nil
+	}
+	out := new(ResourceClaim)
+	in.DeepCopyInto(out)
+	return out
+}
+func (in *ResourceClaim) DeepCopyObject() runtime.Object { return in.DeepCopy() }
+func (in *ResourceClaimList) DeepCopyInto(out *ResourceClaimList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		out.Items = make([]ResourceClaim, len(in.Items))
+		for i := range in.Items {
+			in.Items[i].DeepCopyInto(&out.Items[i])
+		}
+	}
+}
+func (in *ResourceClaimList) DeepCopy() *ResourceClaimList {
+	if in == nil {
+		return nil
+	}
+	out := new(ResourceClaimList)
+	in.DeepCopyInto(out)
+	return out
+}
+func (in *ResourceClaimList) DeepCopyObject() runtime.Object { return in.DeepCopy() }
+func (in *ResourceClaimSpec) DeepCopyInto(out *ResourceClaimSpec) {
+	*out = *in
+	if in.ProviderRef != nil {
+		out.ProviderRef = new(LocalProviderRef)
+		*out.ProviderRef = *in.ProviderRef
+	}
+	if in.ProviderSelector != nil {
+		out.ProviderSelector = in.ProviderSelector.DeepCopy()
+	}
+	in.Parameters.DeepCopyInto(&out.Parameters)
+}
+func (in *ResourceClaimStatus) DeepCopyInto(out *ResourceClaimStatus) {
+	*out = *in
+	if in.Conditions != nil {
+		out.Conditions = make([]metav1.Condition, len(in.Conditions))
+		for i := range in.Conditions {
+			in.Conditions[i].DeepCopyInto(&out.Conditions[i])
+		}
+	}
+}

@@ -77,6 +77,14 @@ func main() {
 	// The modules are registered as no-op shells. Concrete provisioners can be
 	// supplied independently as their provider-specific behavior is implemented.
 
+	if err := (&controller.ResourceClaimReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("resource-claim-controller"), Modules: moduleRegistry,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to register resource claim controller")
+		os.Exit(1)
+	}
+
 	if err := (&controller.WorkloadReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
