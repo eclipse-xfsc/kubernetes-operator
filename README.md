@@ -1,333 +1,519 @@
-# XSFC Resource Operator
+# Eclipse XFSC Kubernetes Operator
 
-Annotation based runtime injection for Helm charts.
+The XFSC Kubernetes Operator provides two complementary capabilities:
 
-A product Helm chart only declares what it needs, for example Redis or NATS. The operator resolves those needs against `ResourceProvider` objects, injects static environment variables, and creates `ExternalSecret` resources that pull credentials from OpenBao through External Secrets Operator.
+1. **Resource Injection**
+2. **Resource Provisioning**
 
-`ResourceBinding` has been removed. The default contract is now:
+These concerns are intentionally separated.
 
-```text
-Helm chart annotations -> ResourceProvider -> ExternalSecret -> injected env
+- **Resource Providers** describe how applications consume infrastructure.
+- **Resource Claims** describe dedicated resources that must be provisioned for an application.
+
+The operator automatically injects connection information into workloads while independently provisioning tenant-specific resources such as databases, users, keyspaces, buckets or ACLs.
+
+---
+
+# Architecture
+
+```
+                    +----------------------+
+                    |  Resource Provider   |
+                    +----------+-----------+
+                               |
+                               |
+                needs=redis,nats,...
+                               |
+                               v
+                    +----------------------+
+                    | Workload Controller  |
+                    +----------+-----------+
+                               |
+                 +-------------+--------------+
+                 |                            |
+                 v                            v
+         External Secrets               ConfigMaps
+                 |                            |
+                 +-------------+--------------+
+                               |
+                               v
+                    Environment Injection
+                               |
+                               v
+                        Application Pods
+
+
+                    +----------------------+
+                    |  Resource Claim      |
+                    +----------+-----------+
+                               |
+                               v
+                  ResourceClaim Controller
+                               |
+                 +-------------+--------------+
+                 |                            |
+                 v                            v
+          Tenant Secret                Root Secret
+                 |                            |
+                 +-------------+--------------+
+                               |
+                               v
+                        Provision Module
+                               |
+                               v
+            Redis / PostgreSQL / Cassandra /
+                 NATS / S3 / Custom Services
 ```
 
-## Prerequisites
+---
 
-- Kubernetes
-- cert-manager
-- External Secrets Operator
-- OpenBao/Vault
-- A `ClusterSecretStore` named `openbao`
+# Resource Injection
 
-## Build and deploy
-
-Build and push an image:
-
-```bash
-make docker-build IMG=ghcr.io/eclipse-xfsc/resource-operator:dev
-make docker-push IMG=ghcr.io/eclipse-xfsc/resource-operator:dev
-```
-
-For kind:
-
-```bash
-make docker-build IMG=ghcr.io/eclipse-xfsc/resource-operator:dev
-kind load docker-image ghcr.io/eclipse-xfsc/resource-operator:dev
-```
-
-Deploy:
-
-```bash
-kubectl apply -k config/default
-```
-
-Verify:
-
-```bash
-kubectl get pods -n xsfc-system
-```
-
-## Two apply smoke test
-
-### 1. Apply the producer/platform side
-
-This creates a Redis `ResourceProvider`. It contains static config and the OpenBao/ESO mapping, but no secret values.
-
-```bash
-kubectl apply -f examples/redis-provider.yaml
-```
-
-The provider says:
+Applications declare their infrastructure dependencies using annotations.
 
 ```yaml
-spec:
-  type: redis
-  outputs:
-    env:
-      REDIS_HOST: redis-master.redis.svc.cluster.local
-      REDIS_PORT: "6379"
-    externalSecrets:
-      - targetSecretNameTemplate: "{{ workload }}-redis"
-        remoteKeyTemplate: "tenants/{{ namespace }}/redis/{{ workload }}"
+metadata:
+  annotations:
+    inject.xfsc.io/enabled: "true"
+    inject.xfsc.io/needs: "redis,postgres"
+    inject.xfsc.io/env-prefix: "APP"
 ```
 
-The external tenant management system must already have written credentials to OpenBao at:
+The operator resolves every entry inside `needs`.
 
-```text
-tenants/tenant-a/redis/wallet-api
-```
+For every referenced `ResourceProvider` it automatically generates
 
-with properties like:
+- ExternalSecret
+- ConfigMap
+- Environment Variables
+- Secret References
 
-```json
-{
-  "username": "tenant-a-wallet-api",
-  "password": "..."
-}
-```
+The application itself never needs to know where credentials are stored.
 
-### 2. Apply the consumer Helm output
+---
 
-```bash
-kubectl apply -f examples/workload.yaml
-```
+# Environment Prefix
 
-The Deployment only declares its needs on the pod template:
+Optionally every injected variable can be prefixed.
+
+Example:
 
 ```yaml
-spec:
-  template:
-    metadata:
-      annotations:
-        inject.xfsc.io/enabled: "true"
-        inject.xfsc.io/needs: "redis"
+inject.xfsc.io/env-prefix: APP
 ```
 
-## Expected result
+Results in
 
-The admission webhook patches the Deployment with:
-
-- `REDIS_HOST`
-- `REDIS_PORT`
-- `REDIS_TLS`
-- `REDIS_CLUSTER`
-- `REDIS_USERNAME` from `secretKeyRef`
-- `REDIS_PASSWORD` from `secretKeyRef`
-
-The workload controller creates the matching `ExternalSecret`:
-
-```bash
-kubectl get externalsecret -n tenant-a
-kubectl get deployment wallet-api -n tenant-a -o yaml
+```
+APP_REDIS_HOST
+APP_REDIS_PORT
+APP_REDIS_USERNAME
+APP_REDIS_PASSWORD
 ```
 
-Expected ExternalSecret name:
+without modifying the underlying Kubernetes Secret.
 
-```text
-wallet-api-redis-eso
-```
+---
 
-Expected target Kubernetes Secret name:
+# Resource Providers
 
-```text
-wallet-api-redis
-```
+A Resource Provider describes how applications consume a service.
 
-## Helm chart contract
-
-Product charts should not create `ResourceProvider` objects. They should only declare needs:
-
-```yaml
-spec:
-  template:
-    metadata:
-      annotations:
-        inject.xfsc.io/enabled: "true"
-        inject.xfsc.io/needs: "redis,nats,service.xy"
-```
-
-Platform charts install providers:
-
-```yaml
-kind: ResourceProvider
-spec:
-  type: nats
-  outputs:
-    env:
-      NATS_URL: nats://nats.infra.svc.cluster.local:4222
-    externalSecrets:
-      - targetSecretNameTemplate: "{{ workload }}-nats"
-        remoteKeyTemplate: "tenants/{{ namespace }}/nats/{{ workload }}"
-```
-
-If a chart needs a specific provider instead of type based resolution:
-
-```yaml
-inject.xfsc.io/providers: "infra/redis-default"
-```
-
-## Responsibilities
-
-Tenant management:
-
-- creates Redis/NATS/Postgres/S3 accounts
-- rotates credentials
-- writes secrets to OpenBao
-
-XSFC operator:
-
-- resolves `inject.xfsc.io/needs`
-- renders provider templates
-- creates `ExternalSecret`
-- patches workload env
-
-External Secrets Operator:
-
-- reads OpenBao
-- creates the Kubernetes Secret
-
-## Watch filtering and lifecycle logs
-
-The Deployment controller only queues workloads where injection is enabled through
-`inject.xfsc.io/enabled: "true"`. Deployments without XSFC injection annotations are
-filtered at the watch level and produce no consumer logs. Status-only Deployment
-updates are ignored.
-
-Lifecycle logs distinguish the operation explicitly:
-
-- `consumer created`, `consumer changed`, `consumer deleted`
-- `resource provider created`, `resource provider updated`, `resource provider deleted`
-- `generated resource created`, `generated resource updated`
-
-Unchanged generated resources and already reconciled consumers are logged only at
-verbosity level 1 (`--zap-log-level=1`) and do not appear in normal info logs.
-
-## Cluster-scoped ResourceProviders
-
-`ResourceProvider` is cluster-scoped. Create it without `metadata.namespace`:
+Example:
 
 ```yaml
 apiVersion: resources.xfsc.io/v1alpha1
 kind: ResourceProvider
+
 metadata:
-  name: hello-provider
+  name: redis-main
+
 spec:
-  type: hello
-  outputs:
-    env:
-      HELLO_MESSAGE: "Hello XSFC!"
+
+  type: redis
+
+  config:
+
+    REDIS_HOST: redis.redis.svc.cluster.local
+    REDIS_PORT: "6379"
+
+  adminSecretRef:
+
+    namespace: infrastructure
+    name: redis-root
+
+  secrets:
+
+    - secretKey: username
+      env: REDIS_USERNAME
+
+    - secretKey: password
+      env: REDIS_PASSWORD
 ```
 
-A provider is available to all namespaces by default. Restrict it with either an allow-list:
+A Resource Provider **does not provision anything**.
+
+It only describes
+
+- connection parameters
+- configuration
+- secret mappings
+- root credentials used by the provisioner
+
+---
+
+# Resource Claims
+
+Applications requiring dedicated resources create a ResourceClaim.
+
+Typical examples are
+
+- dedicated PostgreSQL database
+- dedicated Redis user
+- Cassandra keyspace
+- S3 bucket
+- NATS account
+
+Example
+
+```yaml
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceClaim
+
+metadata:
+  name: redis-db
+
+spec:
+
+  type: redis
+
+  provider: redis-main
+
+  secretRef:
+    name: redis-db-credentials
+
+  parameters:
+
+    database: 1
+
+    acl:
+
+      keys:
+
+      - wallet:*
+
+      commands:
+
+      - +get
+
+      - +set
+```
+
+The claim **does not create credentials**.
+
+It only describes the desired resource.
+
+---
+
+# Credential Generation
+
+Credential generation is handled by the application Helm Chart.
+
+Every chart ships an initialization Job.
+
+```
+Helm Install
+
+        │
+
+        ▼
+
+OpenBao Init Job
+
+        │
+
+        ├── generate username
+
+        ├── generate password
+
+        └── write KV
+
+        │
+
+        ▼
+
+External Secret
+
+        │
+
+        ▼
+
+Kubernetes Secret
+```
+
+This means credentials already exist before the operator provisions the resource.
+
+---
+
+# Provisioning
+
+The ResourceClaim controller watches all ResourceClaims.
+
+Whenever a new claim appears it performs the following steps.
+
+## 1. Read Tenant Secret
+
+The secret referenced by
 
 ```yaml
 spec:
-  allow:
-    namespaces:
-      - tenant-a
-      - tenant-b
+  secretRef:
 ```
 
-or a namespace-label selector:
+is loaded.
+
+This secret contains
+
+```
+username
+password
+```
+
+generated by the Helm chart.
+
+---
+
+## 2. Read Root Secret
+
+The operator loads the root credentials defined by the ResourceProvider.
+
+Example
 
 ```yaml
-spec:
-  allow:
-    selector:
-      resources.xfsc.io/injection-enabled: "true"
+adminSecretRef:
+
+  namespace: infrastructure
+
+  name: redis-root
 ```
 
-The selector is matched against labels on the consumer namespace.
+Only the operator requires access to these credentials.
 
-### Migration from namespaced providers
+---
 
-Kubernetes does not support changing a CRD scope in place reliably. Back up existing providers, remove the old CRD, install the new cluster-scoped CRD, and recreate providers without a namespace:
+## 3. Execute Provisioner
 
-```bash
-kubectl get resourceproviders -A -o yaml > resourceproviders-backup.yaml
-kubectl delete crd resourceproviders.resources.xfsc.io
-kubectl apply -f config/crd/resources.xfsc.io_resourceproviders.yaml
-kubectl apply -f examples/redis-provider.yaml
-```
+The corresponding module provisions the requested resource.
 
-## Consumer-specific environment prefixes
+Examples
 
-A consumer can optionally prefix every environment variable injected by the operator. Set the prefix on the pod template together with the other injection annotations:
+Redis
+
+- create ACL user
+- assign password
+- configure permissions
+
+PostgreSQL
+
+- create role
+- create database
+- grant privileges
+- create schemas
+- install extensions
+
+Cassandra
+
+- create role
+- create keyspace
+- grant permissions
+
+NATS
+
+- create account
+- create user
+- configure permissions
+
+S3
+
+- create user
+- create bucket
+- create policy
+
+---
+
+## 4. Update Status
+
+Finally the claim is updated.
+
+Example
 
 ```yaml
-spec:
-  template:
-    metadata:
-      annotations:
-        inject.xfsc.io/enabled: "true"
-        inject.xfsc.io/needs: "vault,redis"
-        inject.xfsc.io/env-prefix: "WALLET"
+status:
+
+  phase: Ready
+
+  conditions:
+
+  - type: Ready
+
+    status: "True"
 ```
 
-Given a provider that exports `VAULT_ADDR`, `REDIS_HOST`, and `REDIS_PASSWORD`, the resulting container receives:
+---
 
-```text
-WALLET_VAULT_ADDR
-WALLET_REDIS_HOST
-WALLET_REDIS_PASSWORD
+# Separation of Responsibilities
+
+## Helm Chart
+
+Responsible for
+
+- generating credentials
+- writing OpenBao secrets
+- creating ExternalSecrets
+- creating ResourceClaims
+
+The chart never provisions infrastructure resources.
+
+---
+
+## Resource Provider
+
+Responsible for
+
+- describing infrastructure
+- environment variables
+- configuration
+- secret mappings
+- root credential location
+
+---
+
+## Resource Claim
+
+Responsible for describing
+
+- desired database
+- bucket
+- keyspace
+- ACL
+- permissions
+- tenant specific configuration
+
+---
+
+## Operator
+
+Responsible for
+
+- workload injection
+- ExternalSecret generation
+- ConfigMap generation
+- environment injection
+- resource provisioning
+
+The operator never generates credentials.
+
+---
+
+# Module Architecture
+
+Every infrastructure type is implemented as a module.
+
+```
+internal/modules
+
+    redis/
+
+    postgres/
+
+    cassandra/
+
+    nats/
+
+    s3/
 ```
 
-The prefix applies to static values and secret-backed values. Kubernetes Secret keys remain unchanged; only the environment variable name in the consumer is prefixed. Without `inject.xfsc.io/env-prefix`, environment variables are injected under their original names.
+Each module consists of two independent parts.
 
-Prefixes must be valid environment-variable identifiers. Leading and trailing underscores are normalized, so `WALLET_` is treated as `WALLET`.
+## Injector
 
-The prefix is included in the managed injection lifecycle. Changing or removing it during a Helm upgrade removes the previously managed environment variables and injects the new names.
+Responsible for
 
-## Resource-specific modules
+- ExternalSecrets
+- ConfigMaps
+- environment variables
 
-Environment and ExternalSecret injection remains generic. Optional resource-specific behavior is dispatched through the module registry by `ResourceProvider.spec.type`.
+## Provisioner
 
-```text
-Consumer needs redis
-        |
-        v
-Resolve ResourceProvider(type=redis)
-        |
-        +--> Redis module registered? --> reconcile account/provisioning actions
-        |
-        +--> Generate ExternalSecret
-        |
-        +--> Inject environment variables
+Responsible for
+
+- databases
+- users
+- ACLs
+- buckets
+- keyspaces
+- permissions
+
+This separation keeps workload injection independent from infrastructure provisioning.
+
+---
+
+# Typical Workflow
+
+```
+Helm Install
+
+    │
+
+    ├── OpenBao Init Job
+
+    ├── ExternalSecret
+
+    ├── ResourceClaim
+
+    └── Deployment
+
+                │
+
+                ▼
+
+        Workload Controller
+
+                │
+
+                ├── ConfigMap
+
+                ├── ExternalSecret
+
+                └── Environment Injection
+
+                │
+
+                ▼
+
+       ResourceClaim Controller
+
+                │
+
+                ├── Read Tenant Secret
+
+                ├── Read Root Secret
+
+                ├── Provision Resource
+
+                └── Ready
 ```
 
-A module implements the following contract:
+---
 
-```go
-type Module interface {
-    Type() string
-    Reconcile(context.Context, modules.Request) (modules.Result, error)
-}
-```
+# Benefits
 
-Modules must be idempotent because the controller may reconcile the same consumer repeatedly. A module can:
-
-- call an external API to create or update an account;
-- create resource-specific Kubernetes CRs;
-- return generated Kubernetes resources in `modules.Result.Resources`.
-
-Returned resources participate in the operator's ownership and cleanup lifecycle. If a provider stops returning a resource, or the provider is removed, the operator deletes that managed resource.
-
-Modules are registered in `cmd/manager/main.go`:
-
-```go
-moduleRegistry := modules.NewRegistry(
-    redisModule,
-    natsModule,
-)
-```
-
-When no module is registered for a provider type, module dispatch is a no-op and the normal injection flow continues. Module execution happens in the workload controller, not in the admission webhook, so admission remains side-effect free.
-
-A Redis adapter is included in `internal/modules/redis`. The operator can register it when an `AccountProvisioner` implementation is available:
-
-```go
-moduleRegistry := modules.NewRegistry(
-    redis.New(redisAccountProvisioner),
-)
-```
-
-The provisioner decides whether it creates the account directly or returns an account-request CR. When no Redis provisioner is wired, Redis remains a normal injection-only provider.
+- Complete separation of injection and provisioning
+- Credentials generated before provisioning
+- No direct dependency on OpenBao inside modules
+- Kubernetes-native secret handling
+- Extensible module architecture
+- Idempotent provisioning
+- Fully declarative infrastructure
+- Independent application lifecycle
+- Easy support for additional resource types

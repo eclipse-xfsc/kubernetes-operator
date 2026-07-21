@@ -3,33 +3,29 @@ package redis
 import (
 	"context"
 	"fmt"
+
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/modules"
 )
 
-type Provisioner interface {
-	EnsureUser(context.Context, modules.Request) (modules.Result, error)
+type Backend interface {
+	Provision(context.Context, modules.ProvisionRequest) error
 }
-type Module struct{ provisioner Provisioner }
 
-func New(p Provisioner) *Module { return &Module{provisioner: p} }
-func (m *Module) Type() string  { return "redis" }
-func (m *Module) Reconcile(ctx context.Context, req modules.Request) (modules.Result, error) {
-	if m != nil && m.provisioner != nil {
-		return m.provisioner.EnsureUser(ctx, req)
+type Module struct {
+	backend Backend
+}
+
+func New(backend Backend) *Module { return &Module{backend: backend} }
+func (m *Module) Type() string    { return "redis" }
+func (m *Module) Provision(ctx context.Context, req modules.ProvisionRequest) error {
+	if len(req.AdminSecret.Data) == 0 {
+		return fmt.Errorf("%s provider admin secret is empty", m.Type())
 	}
-	if req.Claim == nil {
-		return modules.Result{}, nil
+	if len(req.ClaimSecret.Data) == 0 {
+		return fmt.Errorf("%s claim secret is empty", m.Type())
 	}
-	p, err := modules.Parameters(req)
-	if err != nil {
-		return modules.Result{}, err
+	if m.backend == nil {
+		return fmt.Errorf("%s provisioning backend is not configured", m.Type())
 	}
-	user := modules.StringParameter(p, "username", modules.ClaimBaseName(req))
-	password, err := modules.RandomPassword(24)
-	if err != nil {
-		return modules.Result{}, err
-	}
-	host := modules.ProviderEnv(req, "host", "redis.default.svc")
-	port := modules.ProviderEnv(req, "port", "6379")
-	return modules.Result{SecretData: map[string][]byte{"host": []byte(host), "port": []byte(port), "username": []byte(user), "password": password, "uri": []byte(fmt.Sprintf("redis://%s:%s@%s:%s", user, string(password), host, port))}}, nil
+	return m.backend.Provision(ctx, req)
 }

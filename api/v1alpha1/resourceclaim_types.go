@@ -10,10 +10,14 @@ type ResourceClaimSpec struct {
 	ProviderRef      *LocalProviderRef     `json:"providerRef,omitempty"`
 	ProviderSelector *metav1.LabelSelector `json:"providerSelector,omitempty"`
 	Parameters       runtime.RawExtension  `json:"parameters,omitempty"`
-	SecretName       string                `json:"secretName,omitempty"`
+	SecretRef        LocalSecretRef        `json:"secretRef"`
 }
 
 type LocalProviderRef struct {
+	Name string `json:"name"`
+}
+
+type LocalSecretRef struct {
 	Name string `json:"name"`
 }
 

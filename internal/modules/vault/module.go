@@ -2,19 +2,22 @@ package vault
 
 import (
 	"context"
+	"fmt"
+
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/modules"
 )
 
-type Provisioner interface {
-	EnsureAccess(context.Context, modules.Request) (modules.Result, error)
+type Backend interface {
+	Provision(context.Context, modules.ProvisionRequest) error
 }
-type Module struct{ provisioner Provisioner }
 
-func New(p Provisioner) *Module { return &Module{provisioner: p} }
-func (m *Module) Type() string  { return "vault" }
-func (m *Module) Reconcile(ctx context.Context, req modules.Request) (modules.Result, error) {
-	if m != nil && m.provisioner != nil {
-		return m.provisioner.EnsureAccess(ctx, req)
+type Module struct{ backend Backend }
+
+func New(backend Backend) *Module { return &Module{backend: backend} }
+func (m *Module) Type() string    { return "vault" }
+func (m *Module) Provision(ctx context.Context, req modules.ProvisionRequest) error {
+	if m.backend == nil {
+		return fmt.Errorf("vault provisioning backend is not configured")
 	}
-	return modules.Result{}, nil
+	return m.backend.Provision(ctx, req)
 }

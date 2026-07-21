@@ -4,25 +4,17 @@ import (
 	"context"
 
 	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	corev1 "k8s.io/api/core/v1"
 )
 
-type Request struct {
-	Client      client.Client
+type ProvisionRequest struct {
 	Provider    resourcesv1alpha1.ResourceProvider
-	Claim       *resourcesv1alpha1.ResourceClaim
-	Namespace   string
-	Workload    string
-	Annotations map[string]string
+	Claim       resourcesv1alpha1.ResourceClaim
+	AdminSecret corev1.Secret
+	ClaimSecret corev1.Secret
 }
 
-type Result struct {
-	Resources  []*unstructured.Unstructured
-	SecretData map[string][]byte
-}
-
-type Module interface {
+type Provisioner interface {
 	Type() string
-	Reconcile(context.Context, Request) (Result, error)
+	Provision(context.Context, ProvisionRequest) error
 }

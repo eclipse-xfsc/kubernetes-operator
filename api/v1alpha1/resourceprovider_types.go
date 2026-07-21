@@ -3,10 +3,16 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 type ResourceProviderSpec struct {
-	Type        string            `json:"type"`
-	Description string            `json:"description,omitempty"`
-	Allow       ProviderAllowSpec `json:"allow,omitempty"`
-	Outputs     ProviderOutputs   `json:"outputs,omitempty"`
+	Type           string               `json:"type"`
+	Description    string               `json:"description,omitempty"`
+	Allow          ProviderAllowSpec    `json:"allow,omitempty"`
+	Outputs        ProviderOutputs      `json:"outputs,omitempty"`
+	AdminSecretRef *NamespacedSecretRef `json:"adminSecretRef,omitempty"`
+}
+
+type NamespacedSecretRef struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
 }
 
 type ProviderAllowSpec struct {

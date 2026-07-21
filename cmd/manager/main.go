@@ -67,15 +67,14 @@ func main() {
 	}
 
 	moduleRegistry := modules.NewRegistry(
-		redis.New(nil),
-		postgres.New(nil),
-		cassandra.New(nil),
-		nats.New(nil),
-		s3.New(nil),
+		redis.New(redis.NewBackend()),
+		postgres.New(postgres.NewBackend()),
+		cassandra.New(cassandra.NewBackend()),
+		nats.New(nats.NewBackend()),
+		s3.New(s3.NewBackend()),
 		vault.New(nil),
 	)
-	// The modules are registered as no-op shells. Concrete provisioners can be
-	// supplied independently as their provider-specific behavior is implemented.
+	// Provider-specific provisioning backends are injected into the modules here.
 
 	if err := (&controller.ResourceClaimReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
@@ -89,7 +88,6 @@ func main() {
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("resource-operator"),
-		Modules:  moduleRegistry,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to register workload controller")
 		os.Exit(1)

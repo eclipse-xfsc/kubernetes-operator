@@ -53,6 +53,10 @@ func (in *ResourceProviderSpec) DeepCopyInto(out *ResourceProviderSpec) {
 	*out = *in
 	in.Allow.DeepCopyInto(&out.Allow)
 	in.Outputs.DeepCopyInto(&out.Outputs)
+	if in.AdminSecretRef != nil {
+		out.AdminSecretRef = new(NamespacedSecretRef)
+		*out.AdminSecretRef = *in.AdminSecretRef
+	}
 }
 
 func (in *ProviderAllowSpec) DeepCopyInto(out *ProviderAllowSpec) {
