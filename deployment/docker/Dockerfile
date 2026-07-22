@@ -1,4 +1,4 @@
-FROM golang:1.22 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.22 AS builder
 
 WORKDIR /workspace
 
@@ -7,13 +7,15 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" \
     -o /workspace/manager ./cmd/manager
 
 
 FROM minio/mc:latest AS mc
-
+FROM natsio/nats-box:latest AS natsbox
 
 FROM alpine:3.20
 
@@ -23,6 +25,7 @@ RUN apk add --no-cache \
 
 COPY --from=builder /workspace/manager /manager
 COPY --from=mc /usr/bin/mc /usr/local/bin/mc
+COPY --from=natsbox /usr/local/bin/nsc /usr/local/bin/nsc
 
 ENV HOME=/tmp
 

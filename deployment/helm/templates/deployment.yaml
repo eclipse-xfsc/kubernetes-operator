@@ -18,6 +18,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
+        checksum/module-config: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -32,14 +33,24 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
+            - --metrics-bind-address=:{{ .Values.metrics.port }}
+            - --health-probe-bind-address=:{{ .Values.health.port }}
+            - --webhook-port={{ .Values.webhook.port }}
+            - --module-config=/etc/xfsc/modules.yaml
             {{- if .Values.leaderElection.enabled }}
             - --leader-elect
             {{- end }}
           ports:
+            {{- if .Values.webhook.enabled }}
             - containerPort: {{ .Values.webhook.port }}
               name: webhook
+            {{- end }}
             - containerPort: {{ .Values.health.port }}
               name: health
+            {{- if .Values.metrics.enabled }}
+            - containerPort: {{ .Values.metrics.port }}
+              name: metrics
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /readyz
@@ -48,27 +59,28 @@ spec:
             httpGet:
               path: /healthz
               port: health
-          env:
-            - name: XFSC_MODULE_CONFIG
-              value: /etc/xfsc/modules.yaml
           volumeMounts:
             - name: module-config
               mountPath: /etc/xfsc
               readOnly: true
+            {{- if .Values.webhook.enabled }}
             - name: webhook-cert
               mountPath: /tmp/k8s-webhook-server/serving-certs
               readOnly: true
+            {{- end }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       volumes:
+        - name: module-config
+          secret:
+            secretName: {{ include "resource-operator.fullname" . }}-modules
+        {{- if .Values.webhook.enabled }}
         - name: webhook-cert
           secret:
             secretName: {{ include "resource-operator.certSecretName" . }}
-        - name: module-config
-              secret:
-                secretName: {{ include "operator.fullname" . }}-modules
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

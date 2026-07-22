@@ -29,30 +29,17 @@ leaderElection:
 
 moduleConfig:
   postgres:
-    host: postgres.database.svc
-    port: 5432
-    adminSecret: postgres-root
-
+    enabled: true
   redis:
-    host: redis.database.svc
-    port: 6379
-    adminSecret: redis-root
-
+    enabled: true
   cassandra:
-    hosts:
-      - cassandra.database.svc
-    port: 9042
-    adminSecret: cassandra-root
-
+    enabled: true
   nats:
-    url: nats://nats.messaging.svc:4222
-    adminSecret: nats-root
-
+    enabled: true
   s3:
-    endpoint: http://minio.storage.svc:9000
-    region: us-east-1
-    adminSecret: minio-root
-
+    enabled: true
+  vault:
+    enabled: false
 webhook:
   enabled: true
   port: 9443

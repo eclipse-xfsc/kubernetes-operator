@@ -1,37 +1,42 @@
-# XSFC Resource Operator Helm Chart
+# XFSC Resource Operator Helm Chart
 
-Installs the XSFC Resource Injection Operator.
+Installs the XFSC Resource Injection and Provisioning Operator.
 
 ## Install
 
+From the repository root:
+
 ```bash
-helm install xsfc-resource-operator ./charts/resource-operator \
-  --namespace xsfc-system \
+helm upgrade --install xfsc-resource-operator ./deployment/helm \
+  --namespace xfsc-system \
   --create-namespace \
-  --set image.repository=harbor.example.com/xsfc/resource-operator \
+  --set image.repository=harbor.example.com/xfsc/resource-operator \
   --set image.tag=0.1.0
 ```
 
-## Upgrade
+## Module configuration
 
-```bash
-helm upgrade --install xsfc-resource-operator ./charts/resource-operator \
-  --namespace xsfc-system \
-  --create-namespace \
-  --set image.repository=harbor.example.com/xsfc/resource-operator \
-  --set image.tag=0.1.0
+The chart stores module enablement in the Secret `<release>-resource-operator-modules` and mounts it as `/etc/xfsc/modules.yaml`.
+Backend endpoints and administrative credentials are not stored here. They are read from the Kubernetes Secret referenced by `ResourceProvider.spec.adminSecretRef`.
+
+```yaml
+moduleConfig:
+  postgres:
+    enabled: true
+  redis:
+    enabled: true
+  cassandra:
+    enabled: true
+  nats:
+    enabled: true
+  s3:
+    enabled: true
+  vault:
+    enabled: false
 ```
 
-## Test
+## Render
 
 ```bash
-kubectl apply -f examples/hello-provider.yaml
-kubectl apply -f examples/hello-deployment.yaml
-kubectl exec deploy/hello -- env | grep HELLO_MESSAGE
-```
-
-Expected:
-
-```text
-HELLO_MESSAGE=Hello XSFC!
+helm template xfsc-resource-operator ./deployment/helm --namespace xfsc-system
 ```
