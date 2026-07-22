@@ -48,7 +48,13 @@ spec:
             httpGet:
               path: /healthz
               port: health
+          env:
+            - name: XFSC_MODULE_CONFIG
+              value: /etc/xfsc/modules.yaml
           volumeMounts:
+            - name: module-config
+              mountPath: /etc/xfsc
+              readOnly: true
             - name: webhook-cert
               mountPath: /tmp/k8s-webhook-server/serving-certs
               readOnly: true
@@ -60,6 +66,9 @@ spec:
         - name: webhook-cert
           secret:
             secretName: {{ include "resource-operator.certSecretName" . }}
+        - name: module-config
+              secret:
+                secretName: {{ include "operator.fullname" . }}-modules
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

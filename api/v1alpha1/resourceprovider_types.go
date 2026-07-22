@@ -23,6 +23,19 @@ type ProviderAllowSpec struct {
 type ProviderOutputs struct {
 	Env             map[string]string      `json:"env,omitempty"`
 	ExternalSecrets []ExternalSecretOutput `json:"externalSecrets,omitempty"`
+	Config          []ConfigMapOutput      `json:"config,omitempty"`
+	Jobs            []JobOutput            `json:"jobs,omitempty"`
+}
+
+type ConfigMapOutput struct {
+	NameTemplate string            `json:"nameTemplate,omitempty"`
+	Data         map[string]string `json:"data,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+}
+
+type JobOutput struct {
+	NameTemplate string `json:"nameTemplate,omitempty"`
+	YAML         string `json:"yaml"`
 }
 
 type ExternalSecretOutput struct {

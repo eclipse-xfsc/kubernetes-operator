@@ -1,75 +1,10 @@
 # Eclipse XFSC Kubernetes Operator
 
-The XFSC Kubernetes Operator provides two complementary capabilities:
+The operator has two independent flows: workload injection through `ResourceProvider.outputs`, and backend provisioning through `ResourceClaim` modules.
 
-1. **Resource Injection**
-2. **Resource Provisioning**
+## Injection flow
 
-These concerns are intentionally separated.
-
-- **Resource Providers** describe how applications consume infrastructure.
-- **Resource Claims** describe dedicated resources that must be provisioned for an application.
-
-The operator automatically injects connection information into workloads while independently provisioning tenant-specific resources such as databases, users, keyspaces, buckets or ACLs.
-
----
-
-# Architecture
-
-```
-                    +----------------------+
-                    |  Resource Provider   |
-                    +----------+-----------+
-                               |
-                               |
-                needs=redis,nats,...
-                               |
-                               v
-                    +----------------------+
-                    | Workload Controller  |
-                    +----------+-----------+
-                               |
-                 +-------------+--------------+
-                 |                            |
-                 v                            v
-         External Secrets               ConfigMaps
-                 |                            |
-                 +-------------+--------------+
-                               |
-                               v
-                    Environment Injection
-                               |
-                               v
-                        Application Pods
-
-
-                    +----------------------+
-                    |  Resource Claim      |
-                    +----------+-----------+
-                               |
-                               v
-                  ResourceClaim Controller
-                               |
-                 +-------------+--------------+
-                 |                            |
-                 v                            v
-          Tenant Secret                Root Secret
-                 |                            |
-                 +-------------+--------------+
-                               |
-                               v
-                        Provision Module
-                               |
-                               v
-            Redis / PostgreSQL / Cassandra /
-                 NATS / S3 / Custom Services
-```
-
----
-
-# Resource Injection
-
-Applications declare their infrastructure dependencies using annotations.
+A workload opts in with annotations:
 
 ```yaml
 metadata:
@@ -79,441 +14,143 @@ metadata:
     inject.xfsc.io/env-prefix: "APP"
 ```
 
-The operator resolves every entry inside `needs`.
+A matching `ResourceProvider` can expose four output types:
 
-For every referenced `ResourceProvider` it automatically generates
+- `outputs.env`: fixed environment values.
+- `outputs.externalSecrets`: an ESO `ExternalSecret` plus injected `secretKeyRef` variables.
+- `outputs.config`: a generated `ConfigMap`; its `env` map injects `configMapKeyRef` variables.
+- `outputs.jobs`: rendered `batch/v1 Job` YAML created in the workload namespace.
 
-- ExternalSecret
-- ConfigMap
-- Environment Variables
-- Secret References
+All generated resources are labelled as operator-managed, tracked per provider, updated idempotently and removed when no longer desired. Jobs are always forced into the target namespace. Templates support `.Namespace`, `.Workload`, `.Type`, `.Provider`, and `.Tenant`.
 
-The application itself never needs to know where credentials are stored.
+```mermaid
+sequenceDiagram
+    participant W as Deployment
+    participant C as WorkloadController
+    participant P as ResourceProvider
+    participant E as External Secrets Operator
+    participant K as Kubernetes API
+    W->>C: annotations enabled + needs
+    C->>P: resolve allowed provider
+    P-->>C: env, externalSecrets, config, jobs
+    C->>K: create/update ConfigMaps
+    C->>K: create/update Jobs
+    C->>K: create/update ExternalSecrets
+    E->>K: materialize target Secrets
+    C->>K: patch Deployment env references
+    K-->>W: rollout with injected values
+```
 
----
+## Full provider example
 
-# Environment Prefix
-
-Optionally every injected variable can be prefixed.
-
-Example:
+See [`examples/provider-full-outputs.yaml`](examples/provider-full-outputs.yaml).
 
 ```yaml
-inject.xfsc.io/env-prefix: APP
-```
-
-Results in
-
-```
-APP_REDIS_HOST
-APP_REDIS_PORT
-APP_REDIS_USERNAME
-APP_REDIS_PASSWORD
-```
-
-without modifying the underlying Kubernetes Secret.
-
----
-
-# Resource Providers
-
-A Resource Provider describes how applications consume a service.
-
-Example:
-
-```yaml
-apiVersion: resources.xfsc.io/v1alpha1
-kind: ResourceProvider
-
-metadata:
-  name: redis-main
-
-spec:
-
-  type: redis
-
-  config:
-
+outputs:
+  env:
     REDIS_HOST: redis.redis.svc.cluster.local
-    REDIS_PORT: "6379"
-
-  adminSecretRef:
-
-    namespace: infrastructure
-    name: redis-root
-
-  secrets:
-
-    - secretKey: username
-      env: REDIS_USERNAME
-
-    - secretKey: password
-      env: REDIS_PASSWORD
+  config:
+    - nameTemplate: "{{ .Workload }}-redis-config"
+      data:
+        redis.conf: "timeout 30"
+      env:
+        REDIS_CONFIG: redis.conf
+  externalSecrets:
+    - nameTemplate: "{{ .Workload }}-redis"
+      targetSecretNameTemplate: "{{ .Workload }}-redis"
+      remoteKeyTemplate: "applications/{{ .Namespace }}/{{ .Workload }}/redis"
+      secretStoreRef:
+        kind: ClusterSecretStore
+        name: openbao
+      data:
+        - envName: REDIS_USERNAME
+          property: username
+  jobs:
+    - nameTemplate: "{{ .Workload }}-bootstrap"
+      yaml: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          name: bootstrap
+        spec:
+          template:
+            spec:
+              restartPolicy: OnFailure
+              containers:
+                - name: bootstrap
+                  image: busybox
+                  command: ["true"]
 ```
 
-A Resource Provider **does not provision anything**.
+## Provisioning flow
 
-It only describes
+`ResourceClaimController` reads an existing claim secret and the provider admin secret. It then calls the module selected by `spec.type`.
 
-- connection parameters
-- configuration
-- secret mappings
-- root credentials used by the provisioner
-
----
-
-# Resource Claims
-
-Applications requiring dedicated resources create a ResourceClaim.
-
-Typical examples are
-
-- dedicated PostgreSQL database
-- dedicated Redis user
-- Cassandra keyspace
-- S3 bucket
-- NATS account
-
-Example
-
-```yaml
-apiVersion: resources.xfsc.io/v1alpha1
-kind: ResourceClaim
-
-metadata:
-  name: redis-db
-
-spec:
-
-  type: redis
-
-  provider: redis-main
-
-  secretRef:
-    name: redis-db-credentials
-
-  parameters:
-
-    database: 1
-
-    acl:
-
-      keys:
-
-      - wallet:*
-
-      commands:
-
-      - +get
-
-      - +set
+```mermaid
+sequenceDiagram
+    participant R as ResourceClaimController
+    participant K as Kubernetes API
+    participant G as Module Registry
+    participant M as Module
+    participant B as Backend
+    participant S as Service
+    R->>K: read ResourceClaim
+    R->>K: read ResourceProvider
+    R->>K: read admin Secret
+    R->>K: read claim Secret
+    R->>G: find provisioner by type
+    G-->>R: module
+    R->>M: Provision(request)
+    M->>M: validate secrets
+    M->>B: Provision(request)
+    B->>S: ensure account/user/database/bucket
+    S-->>B: current state
+    B-->>M: success
+    M-->>R: success
+    R->>K: set Ready condition
 ```
 
-The claim **does not create credentials**.
-
-It only describes the desired resource.
-
----
-
-# Credential Generation
-
-Credential generation is handled by the application Helm Chart.
-
-Every chart ships an initialization Job.
-
-```
-Helm Install
-
-        │
-
-        ▼
-
-OpenBao Init Job
-
-        │
-
-        ├── generate username
-
-        ├── generate password
-
-        └── write KV
-
-        │
-
-        ▼
-
-External Secret
-
-        │
-
-        ▼
-
-Kubernetes Secret
+```mermaid
+flowchart LR
+    Claim[ResourceClaim] --> Controller[ResourceClaimController]
+    Controller --> Registry[Module Registry]
+    Registry --> Module[Typed Module]
+    Module --> Backend[Backend Logic]
+    Backend --> Client[Service Client]
+    Client --> Service[(Redis / PostgreSQL / Cassandra / NATS / S3)]
 ```
 
-This means credentials already exist before the operator provisions the resource.
+## Developer tests
 
----
+Run formatting and unit tests:
 
-# Provisioning
-
-The ResourceClaim controller watches all ResourceClaims.
-
-Whenever a new claim appears it performs the following steps.
-
-## 1. Read Tenant Secret
-
-The secret referenced by
-
-```yaml
-spec:
-  secretRef:
+```bash
+gofmt -w api cmd internal
+go test ./...
 ```
 
-is loaded.
+Run the module service environment:
 
-This secret contains
-
-```
-username
-password
-```
-
-generated by the Helm chart.
-
----
-
-## 2. Read Root Secret
-
-The operator loads the root credentials defined by the ResourceProvider.
-
-Example
-
-```yaml
-adminSecretRef:
-
-  namespace: infrastructure
-
-  name: redis-root
+```bash
+docker compose -f test/integration/docker-compose.yaml up -d --wait
+XFSC_INTEGRATION=1 go test -tags=integration ./internal/modules/...
+docker compose -f test/integration/docker-compose.yaml down -v
 ```
 
-Only the operator requires access to these credentials.
+Manual verification commands and service ports are documented in [`test/integration/README.md`](test/integration/README.md).
 
----
+Validate examples and Helm manifests:
 
-## 3. Execute Provisioner
-
-The corresponding module provisions the requested resource.
-
-Examples
-
-Redis
-
-- create ACL user
-- assign password
-- configure permissions
-
-PostgreSQL
-
-- create role
-- create database
-- grant privileges
-- create schemas
-- install extensions
-
-Cassandra
-
-- create role
-- create keyspace
-- grant permissions
-
-NATS
-
-- create account
-- create user
-- configure permissions
-
-S3
-
-- create user
-- create bucket
-- create policy
-
----
-
-## 4. Update Status
-
-Finally the claim is updated.
-
-Example
-
-```yaml
-status:
-
-  phase: Ready
-
-  conditions:
-
-  - type: Ready
-
-    status: "True"
+```bash
+kubectl apply --dry-run=client -f examples/provider-full-outputs.yaml
+helm lint deployment/helm
+helm template xfsc-operator deployment/helm >/tmp/xfsc-operator.yaml
 ```
 
----
+## Existing examples
 
-# Separation of Responsibilities
-
-## Helm Chart
-
-Responsible for
-
-- generating credentials
-- writing OpenBao secrets
-- creating ExternalSecrets
-- creating ResourceClaims
-
-The chart never provisions infrastructure resources.
-
----
-
-## Resource Provider
-
-Responsible for
-
-- describing infrastructure
-- environment variables
-- configuration
-- secret mappings
-- root credential location
-
----
-
-## Resource Claim
-
-Responsible for describing
-
-- desired database
-- bucket
-- keyspace
-- ACL
-- permissions
-- tenant specific configuration
-
----
-
-## Operator
-
-Responsible for
-
-- workload injection
-- ExternalSecret generation
-- ConfigMap generation
-- environment injection
-- resource provisioning
-
-The operator never generates credentials.
-
----
-
-# Module Architecture
-
-Every infrastructure type is implemented as a module.
-
-```
-internal/modules
-
-    redis/
-
-    postgres/
-
-    cassandra/
-
-    nats/
-
-    s3/
-```
-
-Each module consists of two independent parts.
-
-## Injector
-
-Responsible for
-
-- ExternalSecrets
-- ConfigMaps
-- environment variables
-
-## Provisioner
-
-Responsible for
-
-- databases
-- users
-- ACLs
-- buckets
-- keyspaces
-- permissions
-
-This separation keeps workload injection independent from infrastructure provisioning.
-
----
-
-# Typical Workflow
-
-```
-Helm Install
-
-    │
-
-    ├── OpenBao Init Job
-
-    ├── ExternalSecret
-
-    ├── ResourceClaim
-
-    └── Deployment
-
-                │
-
-                ▼
-
-        Workload Controller
-
-                │
-
-                ├── ConfigMap
-
-                ├── ExternalSecret
-
-                └── Environment Injection
-
-                │
-
-                ▼
-
-       ResourceClaim Controller
-
-                │
-
-                ├── Read Tenant Secret
-
-                ├── Read Root Secret
-
-                ├── Provision Resource
-
-                └── Ready
-```
-
----
-
-# Benefits
-
-- Complete separation of injection and provisioning
-- Credentials generated before provisioning
-- No direct dependency on OpenBao inside modules
-- Kubernetes-native secret handling
-- Extensible module architecture
-- Idempotent provisioning
-- Fully declarative infrastructure
-- Independent application lifecycle
-- Easy support for additional resource types
+- `examples/redis-provider.yaml`: Redis injection provider.
+- `examples/provider-full-outputs.yaml`: env, ExternalSecret, ConfigMap and Job outputs.
+- `examples/workload.yaml`: workload opt-in.
+- `examples/*-claim.yaml`: resource provisioning claims.
+- `examples/rendered-externalsecret.yaml`: expected ESO output.

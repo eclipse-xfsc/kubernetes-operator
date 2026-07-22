@@ -72,19 +72,33 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		providerNames = append(providerNames, providers[i].Name)
 		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerType", providers[i].Spec.Type)
 
+		generatedObjects := make([]*unstructured.Unstructured, 0)
 		esList, err := injection.BuildExternalSecrets(&providers[i], dep.Namespace, dep.Name)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		for _, built := range esList {
-			resourceID := managedResourceID(built.Object)
+			generatedObjects = append(generatedObjects, built.Object)
+		}
+		configMaps, err := injection.BuildConfigMaps(&providers[i], dep.Namespace, dep.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		generatedObjects = append(generatedObjects, configMaps...)
+		jobs, err := injection.BuildJobs(&providers[i], dep.Namespace, dep.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		generatedObjects = append(generatedObjects, jobs...)
+		for _, generatedObject := range generatedObjects {
+			resourceID := managedResourceID(generatedObject)
 			generated[providerKey] = append(generated[providerKey], resourceID)
-			action, err := upsertUnstructured(ctx, r.Client, built.Object)
+			action, err := upsertUnstructured(ctx, r.Client, generatedObject)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
 			if action == "created" || action == "updated" {
-				log.Info("generated resource "+action, "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name)
+				log.Info("generated resource "+action, "resourceKind", generatedObject.GetKind(), "resourceNamespace", generatedObject.GetNamespace(), "resourceName", generatedObject.GetName(), "producer", providers[i].Name)
 			}
 		}
 	}

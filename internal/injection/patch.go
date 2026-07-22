@@ -118,6 +118,17 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 				env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "value": render.Template(v, ctx)})
 				names[injectedName] = struct{}{}
 			}
+			for _, cfg := range p.Spec.Outputs.Config {
+				configName := render.Template(cfg.NameTemplate, ctx)
+				if configName == "" {
+					configName = fmt.Sprintf("%s-%s-config", obj.GetName(), p.Spec.Type)
+				}
+				for envName, key := range cfg.Env {
+					injectedName := PrefixEnvName(prefix, envName)
+					env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "valueFrom": map[string]any{"configMapKeyRef": map[string]any{"name": configName, "key": key}}})
+					names[injectedName] = struct{}{}
+				}
+			}
 			for _, es := range p.Spec.Outputs.ExternalSecrets {
 				target := render.Template(es.TargetSecretNameTemplate, ctx)
 				if target == "" {

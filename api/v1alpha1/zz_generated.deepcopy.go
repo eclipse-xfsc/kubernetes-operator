@@ -86,6 +86,31 @@ func (in *ProviderOutputs) DeepCopyInto(out *ProviderOutputs) {
 			in.ExternalSecrets[i].DeepCopyInto(&out.ExternalSecrets[i])
 		}
 	}
+	if in.Config != nil {
+		out.Config = make([]ConfigMapOutput, len(in.Config))
+		for i := range in.Config {
+			in.Config[i].DeepCopyInto(&out.Config[i])
+		}
+	}
+	if in.Jobs != nil {
+		out.Jobs = append([]JobOutput(nil), in.Jobs...)
+	}
+}
+
+func (in *ConfigMapOutput) DeepCopyInto(out *ConfigMapOutput) {
+	*out = *in
+	if in.Data != nil {
+		out.Data = make(map[string]string, len(in.Data))
+		for k, v := range in.Data {
+			out.Data[k] = v
+		}
+	}
+	if in.Env != nil {
+		out.Env = make(map[string]string, len(in.Env))
+		for k, v := range in.Env {
+			out.Env[k] = v
+		}
+	}
 }
 
 func (in *ExternalSecretOutput) DeepCopyInto(out *ExternalSecretOutput) {

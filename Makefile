@@ -29,3 +29,8 @@ deploy:
 
 undeploy:
 	kubectl delete -k config/default --ignore-not-found=true
+
+test-setup: 
+	brew install libpq
+    export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+	brew install minio/stable/mc

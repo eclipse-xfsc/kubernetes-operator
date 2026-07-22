@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Manager",
+      "type": "go",
+      "request": "launch",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/manager",
+      "env": {
+        "PATH": "/opt/homebrew/opt/libpq/bin:${env:PATH}"
+      }
+    }
+  ]
+}

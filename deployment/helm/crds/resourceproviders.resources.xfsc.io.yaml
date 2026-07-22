@@ -49,6 +49,26 @@ spec:
                     env:
                       type: object
                       additionalProperties: {type: string}
+                    config:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          nameTemplate: {type: string}
+                          data:
+                            type: object
+                            additionalProperties: {type: string}
+                          env:
+                            type: object
+                            additionalProperties: {type: string}
+                    jobs:
+                      type: array
+                      items:
+                        type: object
+                        required: [yaml]
+                        properties:
+                          nameTemplate: {type: string}
+                          yaml: {type: string}
                     externalSecrets:
                       type: array
                       items:
