@@ -1,4 +1,5 @@
-IMG ?= node-654e3bca7fbeeed18f81d7c7.ps-xaas.io/common-services/kubernetes-operator:dev
+IMG ?= ghcr.io/eclipse-xfsc/resource-operator:dev
+KIND_CLUSTER ?= kind
 
 .PHONY: test build docker-build docker-push kind-load deploy undeploy manifests run
 
@@ -15,7 +16,21 @@ manifests:
 	@echo "CRDs are hand-written in config/crd for this MVP. Use controller-gen in a real repo."
 
 docker-build:
-	docker buildx build --platform linux/amd64 -t $(IMG) -f deployment/docker/Dockerfile .
+	docker build -t $(IMG) .
 
 docker-push:
 	docker push $(IMG)
+
+kind-load:
+	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
+
+deploy:
+	kubectl apply -k config/default
+
+undeploy:
+	kubectl delete -k config/default --ignore-not-found=true
+
+test-setup: 
+	brew install libpq
+    export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+	brew install minio/stable/mc

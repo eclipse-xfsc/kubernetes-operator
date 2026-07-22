@@ -11,6 +11,8 @@ rules:
     resources:
       - resourceproviders
       - resourceproviders/status
+      - resourceclaims
+      - resourceclaims/status
     verbs:
       - get
       - list
@@ -55,6 +57,15 @@ rules:
       - update
       - patch
       - delete
+
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
 
   - apiGroups:
       - ""

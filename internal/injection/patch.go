@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -17,6 +18,7 @@ const (
 	AnnotationEnabled      = "inject.xfsc.io/enabled"
 	AnnotationNeeds        = "inject.xfsc.io/needs"
 	AnnotationProviders    = "inject.xfsc.io/providers"
+	AnnotationEnvPrefix    = "inject.xfsc.io/env-prefix"
 	AnnotationHash         = "inject.xfsc.io/hash"
 	AnnotationManagedState = "inject.xfsc.io/managed-state"
 	AnnotationWarning      = "inject.xfsc.io/warning"
@@ -44,12 +46,47 @@ func ReadManagedState(obj *unstructured.Unstructured) ManagedState {
 	return state
 }
 
+var envPrefixPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// EnvPrefix reads the optional consumer-specific prefix. A value such as
+// "WALLET" transforms VAULT_ADDR into WALLET_VAULT_ADDR. Empty means that
+// environment variable names are injected unchanged.
+func EnvPrefix(annotations map[string]string) (string, error) {
+	prefix := strings.Trim(strings.TrimSpace(annotations[AnnotationEnvPrefix]), "_")
+	if prefix == "" {
+		return "", nil
+	}
+	if !envPrefixPattern.MatchString(prefix) {
+		return "", fmt.Errorf("annotation %s contains invalid env prefix %q", AnnotationEnvPrefix, prefix)
+	}
+	return prefix, nil
+}
+
+func PrefixEnvName(prefix, name string) string {
+	if prefix == "" {
+		return name
+	}
+	return prefix + "_" + name
+}
+
 func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1.ResourceProvider, resources map[string][]string, missing []string) (ManagedState, error) {
 	containers, found, err := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
 	if err != nil || !found {
 		return ManagedState{}, fmt.Errorf("workload has no pod template containers")
 	}
 	old := ReadManagedState(obj)
+	consumerAnnotations := map[string]string{}
+	for key, value := range obj.GetAnnotations() {
+		consumerAnnotations[key] = value
+	}
+	templateAnnotations, _, _ := unstructured.NestedStringMap(obj.Object, "spec", "template", "metadata", "annotations")
+	for key, value := range templateAnnotations {
+		consumerAnnotations[key] = value
+	}
+	prefix, err := EnvPrefix(consumerAnnotations)
+	if err != nil {
+		return ManagedState{}, err
+	}
 	managedNames := map[string]struct{}{}
 	for _, ps := range old.Providers {
 		for _, n := range ps.Env {
@@ -77,8 +114,20 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 			ctx := render.Context{Namespace: obj.GetNamespace(), Workload: obj.GetName(), Type: p.Spec.Type, Provider: p.Name, Tenant: obj.GetNamespace()}
 			names := map[string]struct{}{}
 			for k, v := range p.Spec.Outputs.Env {
-				env = upsertEnv(env, k, map[string]any{"name": k, "value": render.Template(v, ctx)})
-				names[k] = struct{}{}
+				injectedName := PrefixEnvName(prefix, k)
+				env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "value": render.Template(v, ctx)})
+				names[injectedName] = struct{}{}
+			}
+			for _, cfg := range p.Spec.Outputs.Config {
+				configName := render.Template(cfg.NameTemplate, ctx)
+				if configName == "" {
+					configName = fmt.Sprintf("%s-%s-config", obj.GetName(), p.Spec.Type)
+				}
+				for envName, key := range cfg.Env {
+					injectedName := PrefixEnvName(prefix, envName)
+					env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "valueFrom": map[string]any{"configMapKeyRef": map[string]any{"name": configName, "key": key}}})
+					names[injectedName] = struct{}{}
+				}
 			}
 			for _, es := range p.Spec.Outputs.ExternalSecrets {
 				target := render.Template(es.TargetSecretNameTemplate, ctx)
@@ -86,8 +135,9 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 					target = fmt.Sprintf("%s-%s", obj.GetName(), p.Spec.Type)
 				}
 				for _, d := range es.Data {
-					env = upsertEnv(env, d.EnvName, map[string]any{"name": d.EnvName, "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": target, "key": d.EnvName}}})
-					names[d.EnvName] = struct{}{}
+					injectedName := PrefixEnvName(prefix, d.EnvName)
+					env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": target, "key": d.EnvName}}})
+					names[injectedName] = struct{}{}
 				}
 			}
 			ps.Env = sortedKeys(names)

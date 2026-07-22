@@ -1,0 +1,11 @@
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceClaim
+metadata:
+  name: events-nats
+  namespace: events
+spec:
+  type: nats
+  secretName: messaging
+  parameters:
+    account: events
+    user: events

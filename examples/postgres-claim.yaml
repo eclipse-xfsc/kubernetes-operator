@@ -1,0 +1,14 @@
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceClaim
+metadata:
+  name: wallet-database
+  namespace: wallet
+spec:
+  type: postgres
+  providerSelector:
+    matchLabels:
+      resources.xfsc.io/class: standard
+  secretName: database
+  parameters:
+    database: wallet
+    username: wallet

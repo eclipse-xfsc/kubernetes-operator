@@ -27,6 +27,12 @@ spec:
               properties:
                 type: {type: string}
                 description: {type: string}
+                adminSecretRef:
+                  type: object
+                  required: [name]
+                  properties:
+                    name: {type: string}
+                    namespace: {type: string}
                 scope: {type: string}
                 allow:
                   type: object
@@ -43,6 +49,26 @@ spec:
                     env:
                       type: object
                       additionalProperties: {type: string}
+                    config:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          nameTemplate: {type: string}
+                          data:
+                            type: object
+                            additionalProperties: {type: string}
+                          env:
+                            type: object
+                            additionalProperties: {type: string}
+                    jobs:
+                      type: array
+                      items:
+                        type: object
+                        required: [yaml]
+                        properties:
+                          nameTemplate: {type: string}
+                          yaml: {type: string}
                     externalSecrets:
                       type: array
                       items:

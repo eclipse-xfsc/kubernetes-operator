@@ -48,7 +48,7 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	log.Info("consumer reconcile started")
-	log.Info("consumer discovered", "needs", injection.SplitCSV(ann[injection.AnnotationNeeds]), "providers", injection.SplitCSV(ann[injection.AnnotationProviders]))
+	log.Info("consumer discovered", "needs", injection.SplitCSV(ann[injection.AnnotationNeeds]), "providers", injection.SplitCSV(ann[injection.AnnotationProviders]), "envPrefix", ann[injection.AnnotationEnvPrefix])
 	providers, err := injection.ResolveProviders(ctx, r.Client, req.Namespace, ann)
 	if err != nil {
 		log.Error(err, "failed to resolve resource providers")
@@ -71,19 +71,34 @@ func (r *WorkloadReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		providerKey := providers[i].Name
 		providerNames = append(providerNames, providers[i].Name)
 		log.Info("producer matched to consumer", "producer", providers[i].Name, "producerType", providers[i].Spec.Type)
+
+		generatedObjects := make([]*unstructured.Unstructured, 0)
 		esList, err := injection.BuildExternalSecrets(&providers[i], dep.Namespace, dep.Name)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
 		for _, built := range esList {
-			resourceID := strings.Join([]string{built.Object.GetAPIVersion(), built.Object.GetKind(), built.Object.GetNamespace(), built.Object.GetName()}, "|")
+			generatedObjects = append(generatedObjects, built.Object)
+		}
+		configMaps, err := injection.BuildConfigMaps(&providers[i], dep.Namespace, dep.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		generatedObjects = append(generatedObjects, configMaps...)
+		jobs, err := injection.BuildJobs(&providers[i], dep.Namespace, dep.Name)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		generatedObjects = append(generatedObjects, jobs...)
+		for _, generatedObject := range generatedObjects {
+			resourceID := managedResourceID(generatedObject)
 			generated[providerKey] = append(generated[providerKey], resourceID)
-			action, err := upsertUnstructured(ctx, r.Client, built.Object)
+			action, err := upsertUnstructured(ctx, r.Client, generatedObject)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
 			if action == "created" || action == "updated" {
-				log.Info("generated resource "+action, "resourceKind", built.Object.GetKind(), "resourceNamespace", built.Object.GetNamespace(), "resourceName", built.Object.GetName(), "producer", providers[i].Name)
+				log.Info("generated resource "+action, "resourceKind", generatedObject.GetKind(), "resourceNamespace", generatedObject.GetNamespace(), "resourceName", generatedObject.GetName(), "producer", providers[i].Name)
 			}
 		}
 	}
@@ -141,6 +156,7 @@ func injectionWatchConfig(dep *appsv1.Deployment) map[string]string {
 		injection.AnnotationEnabled:   ann[injection.AnnotationEnabled],
 		injection.AnnotationNeeds:     ann[injection.AnnotationNeeds],
 		injection.AnnotationProviders: ann[injection.AnnotationProviders],
+		injection.AnnotationEnvPrefix: ann[injection.AnnotationEnvPrefix],
 	}
 }
 
@@ -238,6 +254,10 @@ func missingProviderRequests(ann map[string]string, providers []resourcesv1alpha
 		}
 	}
 	return missing
+}
+
+func managedResourceID(obj *unstructured.Unstructured) string {
+	return strings.Join([]string{obj.GetAPIVersion(), obj.GetKind(), obj.GetNamespace(), obj.GetName()}, "|")
 }
 
 func deleteManagedResource(ctx context.Context, c client.Client, id string) error {

@@ -53,6 +53,10 @@ func (in *ResourceProviderSpec) DeepCopyInto(out *ResourceProviderSpec) {
 	*out = *in
 	in.Allow.DeepCopyInto(&out.Allow)
 	in.Outputs.DeepCopyInto(&out.Outputs)
+	if in.AdminSecretRef != nil {
+		out.AdminSecretRef = new(NamespacedSecretRef)
+		*out.AdminSecretRef = *in.AdminSecretRef
+	}
 }
 
 func (in *ProviderAllowSpec) DeepCopyInto(out *ProviderAllowSpec) {
@@ -82,6 +86,31 @@ func (in *ProviderOutputs) DeepCopyInto(out *ProviderOutputs) {
 			in.ExternalSecrets[i].DeepCopyInto(&out.ExternalSecrets[i])
 		}
 	}
+	if in.Config != nil {
+		out.Config = make([]ConfigMapOutput, len(in.Config))
+		for i := range in.Config {
+			in.Config[i].DeepCopyInto(&out.Config[i])
+		}
+	}
+	if in.Jobs != nil {
+		out.Jobs = append([]JobOutput(nil), in.Jobs...)
+	}
+}
+
+func (in *ConfigMapOutput) DeepCopyInto(out *ConfigMapOutput) {
+	*out = *in
+	if in.Data != nil {
+		out.Data = make(map[string]string, len(in.Data))
+		for k, v := range in.Data {
+			out.Data[k] = v
+		}
+	}
+	if in.Env != nil {
+		out.Env = make(map[string]string, len(in.Env))
+		for k, v := range in.Env {
+			out.Env[k] = v
+		}
+	}
 }
 
 func (in *ExternalSecretOutput) DeepCopyInto(out *ExternalSecretOutput) {
@@ -92,6 +121,63 @@ func (in *ExternalSecretOutput) DeepCopyInto(out *ExternalSecretOutput) {
 }
 
 func (in *ResourceProviderStatus) DeepCopyInto(out *ResourceProviderStatus) {
+	*out = *in
+	if in.Conditions != nil {
+		out.Conditions = make([]metav1.Condition, len(in.Conditions))
+		for i := range in.Conditions {
+			in.Conditions[i].DeepCopyInto(&out.Conditions[i])
+		}
+	}
+}
+
+func (in *ResourceClaim) DeepCopyInto(out *ResourceClaim) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	in.Spec.DeepCopyInto(&out.Spec)
+	in.Status.DeepCopyInto(&out.Status)
+}
+func (in *ResourceClaim) DeepCopy() *ResourceClaim {
+	if in == nil {
+		return nil
+	}
+	out := new(ResourceClaim)
+	in.DeepCopyInto(out)
+	return out
+}
+func (in *ResourceClaim) DeepCopyObject() runtime.Object { return in.DeepCopy() }
+func (in *ResourceClaimList) DeepCopyInto(out *ResourceClaimList) {
+	*out = *in
+	out.TypeMeta = in.TypeMeta
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
+	if in.Items != nil {
+		out.Items = make([]ResourceClaim, len(in.Items))
+		for i := range in.Items {
+			in.Items[i].DeepCopyInto(&out.Items[i])
+		}
+	}
+}
+func (in *ResourceClaimList) DeepCopy() *ResourceClaimList {
+	if in == nil {
+		return nil
+	}
+	out := new(ResourceClaimList)
+	in.DeepCopyInto(out)
+	return out
+}
+func (in *ResourceClaimList) DeepCopyObject() runtime.Object { return in.DeepCopy() }
+func (in *ResourceClaimSpec) DeepCopyInto(out *ResourceClaimSpec) {
+	*out = *in
+	if in.ProviderRef != nil {
+		out.ProviderRef = new(LocalProviderRef)
+		*out.ProviderRef = *in.ProviderRef
+	}
+	if in.ProviderSelector != nil {
+		out.ProviderSelector = in.ProviderSelector.DeepCopy()
+	}
+	in.Parameters.DeepCopyInto(&out.Parameters)
+}
+func (in *ResourceClaimStatus) DeepCopyInto(out *ResourceClaimStatus) {
 	*out = *in
 	if in.Conditions != nil {
 		out.Conditions = make([]metav1.Condition, len(in.Conditions))

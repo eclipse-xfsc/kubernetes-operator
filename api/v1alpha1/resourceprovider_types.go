@@ -3,10 +3,16 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 type ResourceProviderSpec struct {
-	Type        string            `json:"type"`
-	Description string            `json:"description,omitempty"`
-	Allow       ProviderAllowSpec `json:"allow,omitempty"`
-	Outputs     ProviderOutputs   `json:"outputs,omitempty"`
+	Type           string               `json:"type"`
+	Description    string               `json:"description,omitempty"`
+	Allow          ProviderAllowSpec    `json:"allow,omitempty"`
+	Outputs        ProviderOutputs      `json:"outputs,omitempty"`
+	AdminSecretRef *NamespacedSecretRef `json:"adminSecretRef,omitempty"`
+}
+
+type NamespacedSecretRef struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
 }
 
 type ProviderAllowSpec struct {
@@ -17,6 +23,19 @@ type ProviderAllowSpec struct {
 type ProviderOutputs struct {
 	Env             map[string]string      `json:"env,omitempty"`
 	ExternalSecrets []ExternalSecretOutput `json:"externalSecrets,omitempty"`
+	Config          []ConfigMapOutput      `json:"config,omitempty"`
+	Jobs            []JobOutput            `json:"jobs,omitempty"`
+}
+
+type ConfigMapOutput struct {
+	NameTemplate string            `json:"nameTemplate,omitempty"`
+	Data         map[string]string `json:"data,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+}
+
+type JobOutput struct {
+	NameTemplate string `json:"nameTemplate,omitempty"`
+	YAML         string `json:"yaml"`
 }
 
 type ExternalSecretOutput struct {

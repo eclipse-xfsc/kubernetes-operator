@@ -26,6 +26,20 @@ affinity: {}
 leaderElection:
   enabled: true
 
+
+moduleConfig:
+  postgres:
+    enabled: true
+  redis:
+    enabled: true
+  cassandra:
+    enabled: true
+  nats:
+    enabled: true
+  s3:
+    enabled: true
+  vault:
+    enabled: false
 webhook:
   enabled: true
   port: 9443

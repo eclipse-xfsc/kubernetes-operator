@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallet-api
+  namespace: tenant-a
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wallet-api
+  template:
+    metadata:
+      labels:
+        app: wallet-api
+      annotations:
+        inject.xfsc.io/enabled: "true"
+        inject.xfsc.io/needs: "redis"
+        inject.xfsc.io/env-prefix: "WALLET"
+    spec:
+      containers:
+        - name: wallet-api
+          image: busybox:1.36
+          command: ["sh", "-c", "env | sort; sleep 3600"]

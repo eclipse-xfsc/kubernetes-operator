@@ -1,39 +1,26 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: infra
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: tenant-a
----
 apiVersion: resources.xfsc.io/v1alpha1
 kind: ResourceProvider
 metadata:
-  name: redis-default
-  namespace: infra
+  name: redis-main
 spec:
   type: redis
-  scope: Cluster
-  description: Shared Redis provider. Accounts are provisioned externally and stored in OpenBao.
+  adminSecretRef:
+    namespace: infrastructure
+    name: redis-root
   allow:
     namespaces:
-      - tenant-a
+      - wallet
   outputs:
     env:
-      REDIS_HOST: redis-master.redis.svc.cluster.local
+      REDIS_HOST: redis.redis.svc.cluster.local
       REDIS_PORT: "6379"
-      REDIS_TLS: "true"
-      REDIS_CLUSTER: "false"
     externalSecrets:
-      - nameTemplate: "{{ workload }}-redis-eso"
-        targetSecretNameTemplate: "{{ workload }}-redis"
-        refreshInterval: 1h
+      - nameTemplate: "{{ .Workload }}-redis"
+        targetSecretNameTemplate: "{{ .Workload }}-redis"
+        remoteKeyTemplate: "applications/{{ .Namespace }}/{{ .Workload }}/redis"
         secretStoreRef:
           kind: ClusterSecretStore
           name: openbao
-        remoteKeyTemplate: "tenants/{{ namespace }}/redis/{{ workload }}"
         data:
           - envName: REDIS_USERNAME
             property: username

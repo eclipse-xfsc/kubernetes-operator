@@ -1,0 +1,5 @@
+{
+    "go.testEnvVars": {
+        "PATH": "/opt/homebrew/opt/libpq/bin:${env:PATH}:/opt/homebrew/bin:$PATH"
+    }
+}

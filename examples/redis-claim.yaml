@@ -1,0 +1,16 @@
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceClaim
+metadata:
+  name: wallet-cache
+  namespace: wallet
+spec:
+  type: redis
+  providerRef:
+    name: redis-main
+  secretRef:
+    name: wallet-cache-credentials
+  parameters:
+    database: 1
+    acl:
+      keys:
+        - wallet:*
