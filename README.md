@@ -2,6 +2,29 @@
 
 The operator has two independent flows: workload injection through `ResourceProvider.outputs`, and backend provisioning through `ResourceClaim` modules.
 
+## Basic Structure
+```
+ResourceClaim
+        │
+        ▼
+providerRef
+        │
+        ▼
+ResourceProvider
+        │
+        ├── type: postgres
+        ├── adminSecretRef
+        │      namespace: infrastructure
+        │      name: postgres-root
+        │
+        ▼
+Provisioner
+        │
+        ├── reads adminSecretRef
+        ├── connects as Admin
+        └── creates DB/User/Secrets
+```
+
 ## Injection flow
 
 A workload opts in with annotations:
