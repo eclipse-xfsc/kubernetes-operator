@@ -15,7 +15,9 @@ type S3Backend struct {
 }
 
 func NewBackend() *S3Backend {
-	return &S3Backend{factory: func(req modules.ProvisionRequest) (*Client, error) { return NewClient(req.AdminSecret, nil) }}
+	return &S3Backend{factory: func(req modules.ProvisionRequest) (*Client, error) {
+		return NewClient(req.Provider, req.AdminSecret, nil)
+	}}
 }
 func (b *S3Backend) Provision(ctx context.Context, req modules.ProvisionRequest) error {
 	var p Parameters

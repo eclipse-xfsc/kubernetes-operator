@@ -17,7 +17,9 @@ type PostgresBackend struct {
 }
 
 func NewBackend() *PostgresBackend {
-	return &PostgresBackend{factory: func(req modules.ProvisionRequest) (*Client, error) { return NewClient(req.AdminSecret, nil) }}
+	return &PostgresBackend{factory: func(req modules.ProvisionRequest) (*Client, error) {
+		return NewClient(req.Provider, req.AdminSecret, nil)
+	}}
 }
 func (b *PostgresBackend) Provision(ctx context.Context, req modules.ProvisionRequest) error {
 	var p Parameters

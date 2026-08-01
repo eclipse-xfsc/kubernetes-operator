@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/modules"
 	"github.com/gocql/gocql"
 	corev1 "k8s.io/api/core/v1"
@@ -13,13 +14,13 @@ import (
 
 type Client struct{ session *gocql.Session }
 
-func NewClient(secret corev1.Secret) (*Client, error) {
-	hosts, err := modules.SecretString(secret, "hosts", "host")
+func NewClient(provider resourcesv1alpha1.ResourceProvider, secret corev1.Secret) (*Client, error) {
+	hosts, err := modules.ProviderRequiredEnv(provider, "CASSANDRA_HOSTS", "CASSANDRA_HOST")
 	if err != nil {
 		return nil, err
 	}
 	cluster := gocql.NewCluster(splitHosts(hosts)...)
-	if port := modules.OptionalSecretString(secret, "port"); port != "" {
+	if port := modules.ProviderEnv(provider, "CASSANDRA_PORT"); port != "" {
 		v, err := strconv.Atoi(port)
 		if err != nil {
 			return nil, fmt.Errorf("invalid cassandra port %q: %w", port, err)

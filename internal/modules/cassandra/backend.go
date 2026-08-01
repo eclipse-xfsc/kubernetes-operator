@@ -19,7 +19,7 @@ type CassandraBackend struct {
 }
 
 func NewBackend() *CassandraBackend {
-	return &CassandraBackend{factory: func(req modules.ProvisionRequest) (*Client, error) { return NewClient(req.AdminSecret) }}
+	return &CassandraBackend{factory: func(req modules.ProvisionRequest) (*Client, error) { return NewClient(req.Provider, req.AdminSecret) }}
 }
 func (b *CassandraBackend) Provision(ctx context.Context, req modules.ProvisionRequest) error {
 	var p Parameters

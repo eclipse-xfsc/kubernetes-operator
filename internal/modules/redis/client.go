@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/modules"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -20,19 +21,19 @@ type Client struct {
 	reader *bufio.Reader
 }
 
-func NewClient(secret corev1.Secret) (*Client, error) {
-	host, err := modules.SecretString(secret, "host", "hostname")
+func NewClient(provider resourcesv1alpha1.ResourceProvider, secret corev1.Secret) (*Client, error) {
+	hosts, err := modules.ProviderRequiredEnv(provider, "REDIS_HOST", "REDIS_HOSTS")
 	if err != nil {
 		return nil, err
 	}
-	port := modules.OptionalSecretString(secret, "port")
-	if port == "" {
-		port = "6379"
+	host, port := modules.SplitHostPort(strings.Split(hosts, ",")[0], "6379")
+	if configuredPort := modules.ProviderEnv(provider, "REDIS_PORT"); configuredPort != "" {
+		port = configuredPort
 	}
 	address := net.JoinHostPort(host, port)
 	dialer := net.Dialer{Timeout: 10 * time.Second}
 	var conn net.Conn
-	if strings.EqualFold(modules.OptionalSecretString(secret, "tls"), "true") {
+	if strings.EqualFold(modules.ProviderEnv(provider, "REDIS_TLS"), "true") {
 		conn, err = tls.DialWithDialer(&dialer, "tcp", address, &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host})
 	} else {
 		conn, err = dialer.Dial("tcp", address)

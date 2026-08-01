@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/modules"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -16,12 +17,12 @@ type Client struct {
 	runner                              modules.CommandRunner
 }
 
-func NewClient(secret corev1.Secret, runner modules.CommandRunner) (*Client, error) {
-	host, err := modules.SecretString(secret, "host", "hostname")
+func NewClient(provider resourcesv1alpha1.ResourceProvider, secret corev1.Secret, runner modules.CommandRunner) (*Client, error) {
+	host, err := modules.ProviderRequiredEnv(provider, "POSTGRES_HOST", "POSTGRES_HOSTNAME", "PGHOST")
 	if err != nil {
 		return nil, err
 	}
-	port := modules.OptionalSecretString(secret, "port")
+	port := modules.ProviderEnv(provider, "POSTGRES_PORT", "PGPORT")
 	if port == "" {
 		port = "5432"
 	}
@@ -33,7 +34,7 @@ func NewClient(secret corev1.Secret, runner modules.CommandRunner) (*Client, err
 	if err != nil {
 		return nil, err
 	}
-	ssl := modules.OptionalSecretString(secret, "sslmode")
+	ssl := modules.ProviderEnv(provider, "POSTGRES_SSLMODE", "PGSSLMODE")
 	if ssl == "" {
 		ssl = "disable"
 	}

@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/modules"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -11,8 +12,8 @@ type Client struct {
 	runner modules.CommandRunner
 }
 
-func NewClient(secret corev1.Secret, runner modules.CommandRunner) (*Client, error) {
-	endpoint, err := modules.SecretString(secret, "endpoint", "url", "host")
+func NewClient(provider resourcesv1alpha1.ResourceProvider, secret corev1.Secret, runner modules.CommandRunner) (*Client, error) {
+	endpoint, err := modules.ProviderRequiredEnv(provider, "S3_ENDPOINT", "MINIO_ENDPOINT")
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +25,7 @@ func NewClient(secret corev1.Secret, runner modules.CommandRunner) (*Client, err
 	if err != nil {
 		return nil, err
 	}
-	alias := modules.OptionalSecretString(secret, "alias")
+	alias := modules.ProviderEnv(provider, "S3_ALIAS", "MINIO_ALIAS")
 	if alias == "" {
 		alias = "xfsc-admin"
 	}

@@ -24,7 +24,7 @@ type RedisBackend struct {
 
 func NewBackend() *RedisBackend {
 	return &RedisBackend{factory: func(req modules.ProvisionRequest) (*Client, error) {
-		return NewClient(req.AdminSecret)
+		return NewClient(req.Provider, req.AdminSecret)
 	}}
 }
 
