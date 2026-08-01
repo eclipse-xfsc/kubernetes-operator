@@ -41,13 +41,19 @@ func (m Module) IsEnabled() bool {
 }
 
 func defaultModules() Modules {
-	enabled := true
+	postgres := true
+	redis := true
+	cassandra := true
+	nats := true
+	s3 := true
+	vault := true
+
 	return Modules{
-		Postgres:  Module{Enabled: &enabled},
-		Redis:     Module{Enabled: &enabled},
-		Cassandra: Module{Enabled: &enabled},
-		NATS:      Module{Enabled: &enabled},
-		S3:        Module{Enabled: &enabled},
-		Vault:     Module{Enabled: &enabled},
+		Postgres:  Module{Enabled: &postgres},
+		Redis:     Module{Enabled: &redis},
+		Cassandra: Module{Enabled: &cassandra},
+		NATS:      Module{Enabled: &nats},
+		S3:        Module{Enabled: &s3},
+		Vault:     Module{Enabled: &vault},
 	}
 }

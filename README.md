@@ -3,11 +3,12 @@
 The operator has two independent flows: workload injection through `ResourceProvider.outputs`, and backend provisioning through `ResourceClaim` modules.
 
 ## Basic Structure
-```
+
+```text
 ResourceClaim
         │
         ▼
-providerRef
+providerRef / providerSelector
         │
         ▼
 ResourceProvider
@@ -21,8 +22,9 @@ ResourceProvider
 Provisioner
         │
         ├── reads adminSecretRef
-        ├── connects as Admin
-        └── creates DB/User/Secrets
+        ├── reads the claim Secret
+        ├── connects as administrator
+        └── ensures backend resources
 ```
 
 ## Injection flow
@@ -105,9 +107,178 @@ outputs:
                   command: ["true"]
 ```
 
+## ResourceClaims
+
+A `ResourceClaim` is a namespaced request for a backend resource such as a PostgreSQL database and user, a Cassandra keyspace and role, a NATS account or user, a Redis user, or an S3 bucket and credentials. The claim contains the desired backend-specific parameters and references a Secret in the same namespace that is used as the claim's credential contract.
+
+The controller resolves a compatible cluster-scoped `ResourceProvider`, reads its administrator Secret, and delegates reconciliation to the module registered for `spec.type`. Provisioning is idempotent: the module ensures that the requested backend objects exist and updates the claim status instead of creating duplicate resources on every reconciliation.
+
+### ResourceClaim fields
+
+| Field | Required | Description |
+| --- | --- | --- |
+| `spec.type` | yes | Backend module type. It must match the selected provider's `spec.type`. |
+| `spec.providerRef.name` | conditional | Selects one `ResourceProvider` explicitly by name. |
+| `spec.providerSelector` | conditional | Selects a provider by Kubernetes labels. Use either `providerRef` or `providerSelector`. |
+| `spec.parameters` | module-specific | Raw backend-specific configuration passed to the selected provisioner module. |
+| `spec.secretRef.name` | yes | Name of the claim Secret in the same namespace as the `ResourceClaim`. |
+
+`ResourceClaim` is namespaced and has the short name `rc`. `ResourceProvider` is cluster-scoped, so one provider can serve multiple namespaces when its allow rules permit them.
+
+### Provider selection
+
+A claim can bind to a provider in one of two ways.
+
+Explicit provider reference:
+
+```yaml
+spec:
+  type: postgres
+  providerRef:
+    name: postgres-standard
+```
+
+Label-based provider selection:
+
+```yaml
+spec:
+  type: postgres
+  providerSelector:
+    matchLabels:
+      resources.xfsc.io/class: standard
+```
+
+The selected provider must:
+
+1. have the same `spec.type` as the claim;
+2. allow the claim namespace through `spec.allow.namespaces` or `spec.allow.selector`;
+3. define a valid `spec.adminSecretRef` for provisioning modules that require administrator access.
+
+Use an explicit `providerRef` when provider choice must be deterministic. A selector is useful for platform classes such as `standard`, `ha`, or `development`, but its labels should identify exactly one eligible provider.
+
+### Claim Secret
+
+The claim references an existing Secret through `spec.secretRef.name`:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: database
+  namespace: wallet
+type: Opaque
+stringData:
+  username: wallet
+  password: replace-me
+```
+
+The Secret must exist in the claim namespace before reconciliation can succeed. Its required keys depend on the selected module. The controller reads this Secret together with the provider's administrator Secret; it does not use a cross-namespace reference for the claim Secret.
+
+The field is named `secretRef`, not `secretName`:
+
+```yaml
+spec:
+  secretRef:
+    name: database
+```
+
+### Complete PostgreSQL example
+
+Provider managed by the platform team:
+
+```yaml
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceProvider
+metadata:
+  name: postgres-standard
+  labels:
+    resources.xfsc.io/class: standard
+spec:
+  type: postgres
+  description: Shared PostgreSQL service
+  allow:
+    namespaces:
+      - wallet
+  adminSecretRef:
+    name: postgres-root
+    namespace: infrastructure
+```
+
+Claim Secret managed in the application namespace:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: database
+  namespace: wallet
+type: Opaque
+stringData:
+  username: wallet
+  password: replace-me
+```
+
+Application claim:
+
+```yaml
+apiVersion: resources.xfsc.io/v1alpha1
+kind: ResourceClaim
+metadata:
+  name: wallet-database
+  namespace: wallet
+spec:
+  type: postgres
+  providerSelector:
+    matchLabels:
+      resources.xfsc.io/class: standard
+  secretRef:
+    name: database
+  parameters:
+    database: wallet
+    username: wallet
+```
+
+Apply the resources and inspect the result:
+
+```bash
+kubectl apply -f postgres-provider.yaml
+kubectl apply -f postgres-secret.yaml
+kubectl apply -f postgres-claim.yaml
+
+kubectl get resourceclaims -n wallet
+kubectl describe resourceclaim wallet-database -n wallet
+kubectl get resourceclaim wallet-database -n wallet -o yaml
+```
+
+The status exposes the observed generation, resolved provider, claim Secret, phase, and Kubernetes conditions:
+
+```yaml
+status:
+  observedGeneration: 1
+  phase: Ready
+  providerRef: postgres-standard
+  secretRef: database
+  conditions:
+    - type: Ready
+      status: "True"
+```
+
+Treat the condition with `type: Ready` and `status: "True"` as the authoritative success signal. When reconciliation fails, inspect the condition message and the operator logs:
+
+```bash
+kubectl describe resourceclaim wallet-database -n wallet
+kubectl logs -n <operator-namespace> deployment/<operator-deployment>
+```
+
+### Lifecycle and ownership
+
+Deleting a `ResourceClaim` removes the Kubernetes request. Backend cleanup depends on the implementation of the selected module and should not be assumed unless the module explicitly documents deprovisioning behavior. Application charts should therefore treat backend deletion as an operationally significant action.
+
+The provider administrator Secret belongs to the platform namespace and must only be readable by the operator. The claim Secret belongs to the application namespace and should be limited to the operator and the workloads that need the resulting credentials.
+
 ## Provisioning flow
 
-`ResourceClaimController` reads an existing claim secret and the provider admin secret. It then calls the module selected by `spec.type`.
+`ResourceClaimController` reads the claim, resolves a provider, reads the claim Secret and the provider administrator Secret, and then calls the module selected by `spec.type`.
 
 ```mermaid
 sequenceDiagram
@@ -118,19 +289,19 @@ sequenceDiagram
     participant B as Backend
     participant S as Service
     R->>K: read ResourceClaim
-    R->>K: read ResourceProvider
+    R->>K: resolve ResourceProvider
     R->>K: read admin Secret
     R->>K: read claim Secret
     R->>G: find provisioner by type
     G-->>R: module
     R->>M: Provision(request)
-    M->>M: validate secrets
-    M->>B: Provision(request)
+    M->>M: validate parameters and secrets
+    M->>B: ensure backend state
     B->>S: ensure account/user/database/bucket
     S-->>B: current state
     B-->>M: success
     M-->>R: success
-    R->>K: set Ready condition
+    R->>K: update phase and Ready condition
 ```
 
 ```mermaid
