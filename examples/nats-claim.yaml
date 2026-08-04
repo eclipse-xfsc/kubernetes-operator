@@ -5,7 +5,8 @@ metadata:
   namespace: events
 spec:
   type: nats
-  secretName: messaging
+  externalSecretRef:
+    name: messaging-credentials
   parameters:
     account: events
     user: events

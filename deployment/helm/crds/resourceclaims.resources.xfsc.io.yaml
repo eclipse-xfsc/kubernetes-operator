@@ -23,7 +23,7 @@ spec:
           properties:
             spec:
               type: object
-              required: [type, secretRef]
+              required: [type, externalSecretRef]
               properties:
                 type:
                   type: string
@@ -36,7 +36,7 @@ spec:
                 providerSelector:
                   x-kubernetes-preserve-unknown-fields: true
                   type: object
-                secretRef:
+                externalSecretRef:
                   type: object
                   required: [name]
                   properties:

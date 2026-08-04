@@ -121,7 +121,7 @@ The controller resolves a compatible cluster-scoped `ResourceProvider`, reads it
 | `spec.providerRef.name` | conditional | Selects one `ResourceProvider` explicitly by name. |
 | `spec.providerSelector` | conditional | Selects a provider by Kubernetes labels. Use either `providerRef` or `providerSelector`. |
 | `spec.parameters` | module-specific | Raw backend-specific configuration passed to the selected provisioner module. |
-| `spec.secretRef.name` | yes | Name of the claim Secret in the same namespace as the `ResourceClaim`. |
+| `spec.externalSecretRef.name` | yes | Name of the ExternalSecret in the same namespace as the `ResourceClaim`. The operator reads its target Secret and remote OpenBao key. |
 
 `ResourceClaim` is namespaced and has the short name `rc`. `ResourceProvider` is cluster-scoped, so one provider can serve multiple namespaces when its allow rules permit them.
 
@@ -158,7 +158,7 @@ Use an explicit `providerRef` when provider choice must be deterministic. A sele
 
 ### Claim Secret
 
-The claim references an existing Secret through `spec.secretRef.name`:
+The claim references a Helm/Argo-managed ExternalSecret through `spec.externalSecretRef.name`:
 
 ```yaml
 apiVersion: v1
@@ -174,11 +174,11 @@ stringData:
 
 The Secret must exist in the claim namespace before reconciliation can succeed. Its required keys depend on the selected module. The controller reads this Secret together with the provider's administrator Secret; it does not use a cross-namespace reference for the claim Secret.
 
-The field is named `secretRef`, not `secretName`:
+The field is named `externalSecretRef`, not `secretName`:
 
 ```yaml
 spec:
-  secretRef:
+  externalSecretRef:
     name: database
 ```
 
@@ -231,7 +231,7 @@ spec:
   providerSelector:
     matchLabels:
       resources.xfsc.io/class: standard
-  secretRef:
+  externalSecretRef:
     name: database
   parameters:
     database: wallet
@@ -257,7 +257,8 @@ status:
   observedGeneration: 1
   phase: Ready
   providerRef: postgres-standard
-  secretRef: database
+  externalSecretRef:
+    name: database
   conditions:
     - type: Ready
       status: "True"
@@ -348,3 +349,20 @@ helm template xfsc-operator deployment/helm >/tmp/xfsc-operator.yaml
 - `examples/workload.yaml`: workload opt-in.
 - `examples/*-claim.yaml`: resource provisioning claims.
 - `examples/rendered-externalsecret.yaml`: expected ESO output.
+
+## ExternalSecret-backed ResourceClaims
+
+`ResourceClaim.spec.externalSecretRef.name` references an `ExternalSecret` rendered by Helm/Argo in the same namespace. The operator:
+
+1. reads `ExternalSecret.spec.target.name` and `spec.data[].remoteRef.key`,
+2. authenticates to OpenBao with its Kubernetes service account,
+3. derives the KV-v2 engine from the first segment of `remoteRef.key` and ensures it exists,
+4. creates `username` and `password` once at the referenced remote key,
+5. waits for ESO to create the target Kubernetes Secret,
+6. provisions or updates the backend account from that Secret,
+7. watches both the ExternalSecret and its target Secret,
+8. removes the OpenBao path when the claim is deleted.
+
+Helm/Argo owns the ResourceClaim and ExternalSecret. OpenBao owns the credential values, ESO owns the generated Kubernetes Secret, and the resource operator owns backend reconciliation.
+
+The remote key must follow `<engine>/<secret-path>`, for example `infrastructure/cassandra/tenant-a`. Required operator connection and authentication values are configured through the Helm values under `openbao`; no separate KV engine value is required.

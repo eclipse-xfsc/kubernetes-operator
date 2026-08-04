@@ -5,6 +5,8 @@ import (
 	"flag"
 	"os"
 
+	"github.com/eclipse-xfsc/kubernetes-operator/internal/openbao"
+
 	"github.com/eclipse-xfsc/kubernetes-operator/internal/config"
 
 	resourcesv1alpha1 "github.com/eclipse-xfsc/kubernetes-operator/api/v1alpha1"
@@ -97,10 +99,15 @@ func main() {
 		provisioners = append(provisioners, vault.New(nil))
 	}
 	moduleRegistry := modules.NewRegistry(provisioners...)
+	openBaoClient := openbao.New(openbao.Config{
+		Address:   os.Getenv("OPENBAO_ADDR"),
+		AuthMount: os.Getenv("OPENBAO_AUTH_MOUNT"),
+		Role:      os.Getenv("OPENBAO_ROLE"),
+	})
 
 	if err := (&controller.ResourceClaimReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("resource-claim-controller"), Modules: moduleRegistry,
+		Recorder: mgr.GetEventRecorderFor("resource-claim-controller"), Modules: moduleRegistry, OpenBao: openBaoClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to register resource claim controller")
 		os.Exit(1)

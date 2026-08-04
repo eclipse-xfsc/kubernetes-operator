@@ -8,7 +8,8 @@ spec:
   providerSelector:
     matchLabels:
       resources.xfsc.io/class: standard
-  secretName: database
+  externalSecretRef:
+    name: database-credentials
   parameters:
     database: wallet
     username: wallet

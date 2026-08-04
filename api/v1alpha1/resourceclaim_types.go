@@ -6,18 +6,18 @@ import (
 )
 
 type ResourceClaimSpec struct {
-	Type             string                `json:"type"`
-	ProviderRef      *LocalProviderRef     `json:"providerRef,omitempty"`
-	ProviderSelector *metav1.LabelSelector `json:"providerSelector,omitempty"`
-	Parameters       runtime.RawExtension  `json:"parameters,omitempty"`
-	SecretRef        LocalSecretRef        `json:"secretRef"`
+	Type              string                 `json:"type"`
+	ProviderRef       *LocalProviderRef      `json:"providerRef,omitempty"`
+	ProviderSelector  *metav1.LabelSelector  `json:"providerSelector,omitempty"`
+	Parameters        runtime.RawExtension   `json:"parameters,omitempty"`
+	ExternalSecretRef LocalExternalSecretRef `json:"externalSecretRef"`
 }
 
 type LocalProviderRef struct {
 	Name string `json:"name"`
 }
 
-type LocalSecretRef struct {
+type LocalExternalSecretRef struct {
 	Name string `json:"name"`
 }
 
@@ -25,7 +25,9 @@ type ResourceClaimStatus struct {
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
 	Phase              string             `json:"phase,omitempty"`
 	ProviderRef        string             `json:"providerRef,omitempty"`
+	ExternalSecretRef  string             `json:"externalSecretRef,omitempty"`
 	SecretRef          string             `json:"secretRef,omitempty"`
+	RemoteSecretPath   string             `json:"remoteSecretPath,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 

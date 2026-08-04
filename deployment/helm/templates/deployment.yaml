@@ -51,6 +51,13 @@ spec:
             - containerPort: {{ .Values.metrics.port }}
               name: metrics
             {{- end }}
+          env:
+            - name: OPENBAO_ADDR
+              value: {{ .Values.openbao.address | quote }}
+            - name: OPENBAO_AUTH_MOUNT
+              value: {{ .Values.openbao.authMount | quote }}
+            - name: OPENBAO_ROLE
+              value: {{ .Values.openbao.role | quote }}
           readinessProbe:
             httpGet:
               path: /readyz

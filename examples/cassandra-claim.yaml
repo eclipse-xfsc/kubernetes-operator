@@ -5,7 +5,12 @@ metadata:
   namespace: ledger
 spec:
   type: cassandra
-  secretName: cassandra
+  providerRef:
+    name: cassandra
+  externalSecretRef:
+    name: ledger-cassandra-credentials
   parameters:
     keyspace: ledger
-    username: ledger
+    replicationFactor: 1
+    durableWrites: true
+    datacenter: dc1

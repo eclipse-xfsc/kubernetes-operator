@@ -57,7 +57,12 @@ func (c *Client) Close() {
 	}
 }
 func (c *Client) EnsureRole(ctx context.Context, user, password string) error {
-	return c.session.Query(fmt.Sprintf("CREATE ROLE IF NOT EXISTS %s WITH PASSWORD = %s AND LOGIN = true", quoteIdentifier(user), quoteLiteral(password))).WithContext(ctx).Exec()
+	if err := c.session.Query(fmt.Sprintf("CREATE ROLE IF NOT EXISTS %s WITH PASSWORD = %s AND LOGIN = true", quoteIdentifier(user), quoteLiteral(password))).WithContext(ctx).Exec(); err != nil {
+		return err
+	}
+	// CREATE ROLE IF NOT EXISTS does not update credentials of an existing role.
+	// Always reconcile the password to the value delivered by ESO/OpenBao.
+	return c.session.Query(fmt.Sprintf("ALTER ROLE %s WITH PASSWORD = %s AND LOGIN = true", quoteIdentifier(user), quoteLiteral(password))).WithContext(ctx).Exec()
 }
 func (c *Client) EnsureKeyspace(ctx context.Context, keyspace, dc string, rf int) error {
 	strategy := fmt.Sprintf("{'class':'SimpleStrategy','replication_factor':%d}", rf)

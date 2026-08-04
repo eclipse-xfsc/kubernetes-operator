@@ -7,7 +7,7 @@ spec:
   type: redis
   providerRef:
     name: redis-main
-  secretRef:
+  externalSecretRef:
     name: wallet-cache-credentials
   parameters:
     database: 1

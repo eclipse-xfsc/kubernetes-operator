@@ -75,3 +75,8 @@ metrics:
 
 health:
   port: 8081
+
+openbao:
+  address: http://openbao.infrastructure.svc.cluster.local:8200
+  authMount: kubernetes
+  role: xfsc-infrastructure-resource-provisioner
