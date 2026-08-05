@@ -291,17 +291,18 @@ func splitRemoteKey(remoteKey string) (string, string, error) {
 		"/",
 	)
 
-	parts := strings.SplitN(clean, "/", 2)
-	if len(parts) != 2 ||
-		strings.TrimSpace(parts[0]) == "" ||
-		strings.TrimSpace(parts[1]) == "" {
+	lastSlash := strings.LastIndex(clean, "/")
+	if lastSlash <= 0 || lastSlash == len(clean)-1 {
 		return "", "", fmt.Errorf(
-			"remote key %q must use <engine>/<secret-path>",
+			"remote key %q must use <engine-path>/<secret-name>",
 			remoteKey,
 		)
 	}
 
-	return parts[0], parts[1], nil
+	engine := clean[:lastSlash]
+	secretPath := clean[lastSlash+1:]
+
+	return engine, secretPath, nil
 }
 
 func (c *Client) request(
