@@ -12,7 +12,7 @@ fullnameOverride: ""
 serviceAccount:
   create: false
   annotations: {}
-  name: "infrastructure-resource-provisioner"
+  name: "openbao-provisioner"
 
 podAnnotations: {}
 podLabels: {}
@@ -79,4 +79,4 @@ health:
 openbao:
   address: http://openbao.infrastructure.svc.cluster.local:8200
   authMount: kubernetes
-  role: xfsc-infrastructure-resource-provisioner
+  role: openbao-provisioner
