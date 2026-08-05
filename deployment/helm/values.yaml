@@ -10,9 +10,9 @@ nameOverride: ""
 fullnameOverride: ""
 
 serviceAccount:
-  create: true
+  create: false
   annotations: {}
-  name: ""
+  name: "infrastructure-resource-provisioner"
 
 podAnnotations: {}
 podLabels: {}
