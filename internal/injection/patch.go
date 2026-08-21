@@ -15,13 +15,14 @@ import (
 )
 
 const (
-	AnnotationEnabled      = "inject.xfsc.io/enabled"
-	AnnotationNeeds        = "inject.xfsc.io/needs"
-	AnnotationProviders    = "inject.xfsc.io/providers"
-	AnnotationEnvPrefix    = "inject.xfsc.io/env-prefix"
-	AnnotationHash         = "inject.xfsc.io/hash"
-	AnnotationManagedState = "inject.xfsc.io/managed-state"
-	AnnotationWarning      = "inject.xfsc.io/warning"
+	AnnotationEnabled         = "inject.xfsc.io/enabled"
+	AnnotationNeeds           = "inject.xfsc.io/needs"
+	AnnotationProviders       = "inject.xfsc.io/providers"
+	AnnotationEnvPrefix       = "inject.xfsc.io/env-prefix"
+	AnnotationEnvReplacements = "inject.xfsc.io/env-replacements"
+	AnnotationHash            = "inject.xfsc.io/hash"
+	AnnotationManagedState    = "inject.xfsc.io/managed-state"
+	AnnotationWarning         = "inject.xfsc.io/warning"
 )
 
 type ManagedProviderState struct {
@@ -69,6 +70,51 @@ func PrefixEnvName(prefix, name string) string {
 	return prefix + "_" + name
 }
 
+// EnvReplacements reads optional consumer-specific environment variable name
+// replacements from inject.xfsc.io/env-replacements. The annotation value is a
+// JSON object whose keys are provider output names and whose values are the
+// consumer-specific names to inject. Replacements are applied before env-prefix.
+//
+// Example:
+//
+//	inject.xfsc.io/env-replacements: '{"SIGNER_TOPIC":"OAUTH_SIGNERTOPIC"}'
+//	inject.xfsc.io/env-prefix: "PREAUTHBRIDGE"
+//
+// produces PREAUTHBRIDGE_OAUTH_SIGNERTOPIC.
+func EnvReplacements(annotations map[string]string) (map[string]string, error) {
+	raw := strings.TrimSpace(annotations[AnnotationEnvReplacements])
+	if raw == "" {
+		return map[string]string{}, nil
+	}
+
+	parsed := map[string]string{}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, fmt.Errorf("annotation %s must be a JSON object mapping env names to replacement names: %w", AnnotationEnvReplacements, err)
+	}
+
+	replacements := make(map[string]string, len(parsed))
+	for source, target := range parsed {
+		source = strings.TrimSpace(source)
+		target = strings.TrimSpace(target)
+		if !envPrefixPattern.MatchString(source) {
+			return nil, fmt.Errorf("annotation %s contains invalid source env name %q", AnnotationEnvReplacements, source)
+		}
+		if !envPrefixPattern.MatchString(target) {
+			return nil, fmt.Errorf("annotation %s contains invalid replacement env name %q for %q", AnnotationEnvReplacements, target, source)
+		}
+		replacements[source] = target
+	}
+
+	return replacements, nil
+}
+
+func ResolveEnvName(prefix string, replacements map[string]string, name string) string {
+	if replacement, ok := replacements[name]; ok {
+		name = replacement
+	}
+	return PrefixEnvName(prefix, name)
+}
+
 func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1.ResourceProvider, resources map[string][]string, missing []string) (ManagedState, error) {
 	containers, found, err := unstructured.NestedSlice(obj.Object, "spec", "template", "spec", "containers")
 	if err != nil || !found {
@@ -84,6 +130,10 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 		consumerAnnotations[key] = value
 	}
 	prefix, err := EnvPrefix(consumerAnnotations)
+	if err != nil {
+		return ManagedState{}, err
+	}
+	replacements, err := EnvReplacements(consumerAnnotations)
 	if err != nil {
 		return ManagedState{}, err
 	}
@@ -114,7 +164,7 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 			ctx := render.Context{Namespace: obj.GetNamespace(), Workload: obj.GetName(), Type: p.Spec.Type, Provider: p.Name, Tenant: obj.GetNamespace()}
 			names := map[string]struct{}{}
 			for k, v := range p.Spec.Outputs.Env {
-				injectedName := PrefixEnvName(prefix, k)
+				injectedName := ResolveEnvName(prefix, replacements, k)
 				env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "value": render.Template(v, ctx)})
 				names[injectedName] = struct{}{}
 			}
@@ -124,7 +174,7 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 					configName = fmt.Sprintf("%s-%s-config", obj.GetName(), p.Spec.Type)
 				}
 				for envName, key := range cfg.Env {
-					injectedName := PrefixEnvName(prefix, envName)
+					injectedName := ResolveEnvName(prefix, replacements, envName)
 					env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "valueFrom": map[string]any{"configMapKeyRef": map[string]any{"name": configName, "key": key}}})
 					names[injectedName] = struct{}{}
 				}
@@ -135,7 +185,7 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 					target = fmt.Sprintf("%s-%s", obj.GetName(), p.Spec.Type)
 				}
 				for _, d := range es.Data {
-					injectedName := PrefixEnvName(prefix, d.EnvName)
+					injectedName := ResolveEnvName(prefix, replacements, d.EnvName)
 					env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": target, "key": d.EnvName}}})
 					names[injectedName] = struct{}{}
 				}

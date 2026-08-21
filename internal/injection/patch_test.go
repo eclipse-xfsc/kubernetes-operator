@@ -112,3 +112,72 @@ func assertEnvName(t *testing.T, env map[string]map[string]any, name string) {
 		t.Fatalf("expected env %q, got %#v", name, env)
 	}
 }
+
+func TestPatchWorkloadAppliesEnvReplacementBeforePrefix(t *testing.T) {
+	obj := testDeployment(map[string]string{
+		AnnotationEnabled:         "true",
+		AnnotationEnvPrefix:       "PREAUTHBRIDGE",
+		AnnotationEnvReplacements: `{"SIGNER_TOPIC":"OAUTH_SIGNERTOPIC"}`,
+	})
+	provider := resourcesv1alpha1.ResourceProvider{}
+	provider.Name = "nats"
+	provider.Spec.Type = "nats"
+	provider.Spec.Outputs.Env = map[string]string{"SIGNER_TOPIC": "signer-topic"}
+
+	if _, err := PatchWorkload(obj, []resourcesv1alpha1.ResourceProvider{provider}, nil, nil); err != nil {
+		t.Fatalf("PatchWorkload() error = %v", err)
+	}
+
+	env := containerEnv(t, obj)
+	assertEnvName(t, env, "PREAUTHBRIDGE_OAUTH_SIGNERTOPIC")
+	if _, found := env["PREAUTHBRIDGE_SIGNER_TOPIC"]; found {
+		t.Fatalf("unreplaced env name was injected")
+	}
+}
+
+func TestPatchWorkloadAppliesReplacementToExternalSecretEnvOnly(t *testing.T) {
+	obj := testDeployment(map[string]string{
+		AnnotationEnabled:         "true",
+		AnnotationEnvReplacements: `{"VAULT_TOKEN":"OAUTH_VAULT_TOKEN"}`,
+	})
+	provider := resourcesv1alpha1.ResourceProvider{}
+	provider.Name = "vault"
+	provider.Spec.Type = "vault"
+	provider.Spec.Outputs.ExternalSecrets = []resourcesv1alpha1.ExternalSecretOutput{{
+		TargetSecretNameTemplate: "app-vault",
+		RemoteKeyTemplate:        "tenants/default/vault/app",
+		Data: []resourcesv1alpha1.ExternalSecretKey{{
+			EnvName:  "VAULT_TOKEN",
+			Property: "token",
+		}},
+	}}
+
+	if _, err := PatchWorkload(obj, []resourcesv1alpha1.ResourceProvider{provider}, nil, nil); err != nil {
+		t.Fatalf("PatchWorkload() error = %v", err)
+	}
+
+	env := containerEnv(t, obj)
+	item, found := env["OAUTH_VAULT_TOKEN"]
+	if !found {
+		t.Fatalf("replacement env was not injected: %#v", env)
+	}
+	valueFrom := item["valueFrom"].(map[string]any)
+	secretKeyRef := valueFrom["secretKeyRef"].(map[string]any)
+	if got := secretKeyRef["key"]; got != "VAULT_TOKEN" {
+		t.Fatalf("secret key must remain original provider env key, got %v", got)
+	}
+}
+
+func TestEnvReplacementsRejectsInvalidJSON(t *testing.T) {
+	_, err := EnvReplacements(map[string]string{AnnotationEnvReplacements: `SIGNER_TOPIC=OAUTH_SIGNERTOPIC`})
+	if err == nil {
+		t.Fatal("expected invalid replacement annotation to fail")
+	}
+}
+
+func TestEnvReplacementsRejectsInvalidTargetName(t *testing.T) {
+	_, err := EnvReplacements(map[string]string{AnnotationEnvReplacements: `{"SIGNER_TOPIC":"oauth.signer-topic"}`})
+	if err == nil {
+		t.Fatal("expected invalid replacement target to fail")
+	}
+}
