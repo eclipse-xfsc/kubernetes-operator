@@ -163,7 +163,9 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 			}
 			ctx := render.Context{Namespace: obj.GetNamespace(), Workload: obj.GetName(), Type: p.Spec.Type, Provider: p.Name, Tenant: obj.GetNamespace()}
 			names := map[string]struct{}{}
-			for k, v := range p.Spec.Outputs.Env {
+			// Iterate deterministically: map iteration order must not change the Pod template.
+			for _, k := range sortedStringMapKeys(p.Spec.Outputs.Env) {
+				v := p.Spec.Outputs.Env[k]
 				injectedName := ResolveEnvName(prefix, replacements, k)
 				env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "value": render.Template(v, ctx)})
 				names[injectedName] = struct{}{}
@@ -173,7 +175,8 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 				if configName == "" {
 					configName = fmt.Sprintf("%s-%s-config", obj.GetName(), p.Spec.Type)
 				}
-				for envName, key := range cfg.Env {
+				for _, envName := range sortedStringMapKeys(cfg.Env) {
+					key := cfg.Env[envName]
 					injectedName := ResolveEnvName(prefix, replacements, envName)
 					env = upsertEnv(env, injectedName, map[string]any{"name": injectedName, "valueFrom": map[string]any{"configMapKeyRef": map[string]any{"name": configName, "key": key}}})
 					names[injectedName] = struct{}{}
@@ -263,4 +266,15 @@ func sortedKeys(m map[string]struct{}) []string {
 func joinSorted(xs []string) string {
 	sort.Strings(xs)
 	return strings.Join(xs, ", ")
+}
+
+// sortedStringMapKeys returns stable keys for maps with string values.
+// Keeping injection order deterministic prevents unnecessary Deployment rollouts.
+func sortedStringMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
