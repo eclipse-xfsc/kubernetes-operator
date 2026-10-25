@@ -137,6 +137,12 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 	if err != nil {
 		return ManagedState{}, err
 	}
+	// Normalize provider order for both env injection and the annotation hash.
+	// Do not mutate the caller-owned slice.
+	sortedProviders := append([]resourcesv1alpha1.ResourceProvider(nil), providers...)
+	sort.Slice(sortedProviders, func(i, j int) bool {
+		return sortedProviders[i].Name < sortedProviders[j].Name
+	})
 	managedNames := map[string]struct{}{}
 	for _, ps := range old.Providers {
 		for _, n := range ps.Env {
@@ -152,7 +158,7 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 		}
 		env, _ := c["env"].([]any)
 		env = removeManagedEnv(env, managedNames)
-		for _, p := range providers {
+		for _, p := range sortedProviders {
 			key := p.Name
 			ps := state.Providers[key]
 			ps.Type = p.Spec.Type
@@ -208,7 +214,7 @@ func PatchWorkload(obj *unstructured.Unstructured, providers []resourcesv1alpha1
 	}
 	raw, _ := json.Marshal(state)
 	ann[AnnotationManagedState] = string(raw)
-	b, _ := json.Marshal(providers)
+	b, _ := json.Marshal(sortedProviders)
 	sum := sha256.Sum256(b)
 	ann[AnnotationHash] = hex.EncodeToString(sum[:])
 	if len(missing) > 0 {
