@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     -o /workspace/manager ./cmd/manager
 
 
-FROM minio/mc:latest AS mc
+FROM pgsty/mc:RELEASE.2026-09-16T00-00-00Z AS mc
 FROM natsio/nats-box:latest AS natsbox
 
 FROM alpine:3.20
