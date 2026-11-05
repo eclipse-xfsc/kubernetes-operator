@@ -366,3 +366,33 @@ helm template xfsc-operator deployment/helm >/tmp/xfsc-operator.yaml
 Helm/Argo owns the ResourceClaim and ExternalSecret. OpenBao owns the credential values, ESO owns the generated Kubernetes Secret, and the resource operator owns backend reconciliation.
 
 The remote key must follow `<engine>/<secret-path>`, for example `infrastructure/cassandra/tenant-a`. Required operator connection and authentication values are configured through the Helm values under `openbao`; no separate KV engine value is required.
+
+
+## ResourceClaim accounts for Redis and PostgreSQL
+
+A `ResourceClaim` creates a separate account when the username in its Kubernetes Secret is new to the target Redis instance or PostgreSQL server. Claims that resolve to the same username on the same backend manage the same account, even across Kubernetes namespaces.
+
+### How the operator provisions an account
+
+1. The operator resolves `spec.externalSecretRef.name` to an `ExternalSecret` in the claim’s namespace. The `ExternalSecret` points to a single OpenBao path through `spec.data[].remoteRef.key`.
+2. If that path is new, the operator stores the claim’s `metadata.name` as `username` and generates a password. If the path already exists, the operator reuses the stored credentials.
+3. External Secrets Operator syncs the credentials into the Kubernetes Secret named by `spec.target.name`, which defaults to the `ExternalSecret` name.
+4. Once the target Secret and the provider’s admin Secret are available, the operator connects to the backend with the admin credentials and provisions the account using the username and password from the target Secret.
+
+### Redis
+
+The operator uses `ACL SETUSER` to create or update the user. Each reconciliation resets the user’s password and ACL rules to the values supplied by the claim. If two claims manage the same user, the most recent successful reconciliation determines its password and permissions.
+
+Use `spec.parameters.acl` to configure key patterns, Pub/Sub channel patterns, and allowed commands. The Redis backend currently reads `spec.parameters.database` but does not use it during provisioning.
+
+### PostgreSQL
+
+The operator creates a login role when the username is new and updates the password when the role already exists. The role name comes from the target Secret. Although the example claim includes `spec.parameters.username`, the PostgreSQL backend does not use that field.
+
+`spec.parameters.database` sets the database name and defaults to the claim name. The operator assigns the login role as the owner when creating a database. An existing database keeps its current owner.
+
+### Creating separate accounts
+
+For claims targeting the same backend, use distinct claim names such as `wallet-cache` and `issuer-cache`. Give each claim its own `ExternalSecret`, Kubernetes target Secret, and OpenBao path. If you reuse an existing OpenBao path, check its stored username because the operator preserves existing credentials.
+
+If two claims appear to share an account, compare their `status.remoteSecretPath`, `status.secretRef`, and the `username` in each target Secret. A shared OpenBao path or a shared Kubernetes target Secret can give both claims the same credentials. Identical claim names in different namespaces can also produce the same username, even when the OpenBao paths differ.
